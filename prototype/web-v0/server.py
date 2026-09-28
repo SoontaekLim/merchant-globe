@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import argparse
 import json
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import urlparse
 
 ROOT = Path(__file__).resolve().parent
-HOST = "127.0.0.1"
+DEFAULT_HOST = "127.0.0.1"
 PORT = 8000
 
 
@@ -45,7 +46,20 @@ class MerchantGlobeHandler(SimpleHTTPRequestHandler):
         self.wfile.write(body)
 
 
+def parse_args(argv=None):
+    parser = argparse.ArgumentParser(description="Merchant Globe development server")
+    parser.add_argument(
+        "--host",
+        default=DEFAULT_HOST,
+        help=f"IP address to bind to (default: {DEFAULT_HOST})",
+    )
+    return parser.parse_args(argv)
+
+
 if __name__ == "__main__":
-    print(f"Merchant Globe dev server: http://{HOST}:{PORT}")
-    print(f"Health check:              http://{HOST}:{PORT}/api/health")
-    ThreadingHTTPServer((HOST, PORT), MerchantGlobeHandler).serve_forever()
+    args = parse_args()
+    host = args.host
+
+    print(f"Merchant Globe dev server: http://{host}:{PORT}")
+    print(f"Health check:              http://{host}:{PORT}/api/health")
+    ThreadingHTTPServer((host, PORT), MerchantGlobeHandler).serve_forever()
