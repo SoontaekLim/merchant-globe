@@ -101,6 +101,12 @@ cd prototype/web-v0
 python3 server.py
 ```
 
+기본 바인딩 주소는 `127.0.0.1`입니다. 다른 장치에서도 접속할 수 있게 바인딩 주소를 지정하려면:
+
+```bash
+python3 server.py --host 0.0.0.0
+```
+
 브라우저:
 
 ```text
