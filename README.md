@@ -1,5 +1,7 @@
 # Merchant Globe
 
+![CI](https://github.com/SoontaekLim/merchant-globe/actions/workflows/ci.yml/badge.svg)
+
 Merchant Globe는 실제 세계의 도시와 지리를 기반으로 하는 무역·경제 시뮬레이션 게임입니다. 현실 경제를 그대로 복제하기보다 게임성을 위해 재해석한 시장에서 작은 개인 상인부터 글로벌 무역회사까지 성장하는 것을 목표로 합니다.
 
 ## 현재 단계
@@ -57,3 +59,23 @@ merchant-globe/
 - 경제 엔진 자동 테스트
 
 실행 방법과 상세 내용은 [`prototype/web-v0/README.md`](prototype/web-v0/README.md)를 참고하세요.
+
+
+## 개발 검증
+
+모든 Pull Request와 `main` 브랜치 push에서 GitHub Actions CI가 자동 실행됩니다. 내부 개발은 `self-hosted` + `merchant-globe` 러너를 기본으로 사용하고, 외부 fork PR은 GitHub-hosted 러너에서 실행합니다. 로컬 러너를 사용할 수 없을 때는 PR에 `ci:github-hosted` 레이블을 붙이거나 Actions의 수동 실행에서 `runner: github`를 선택할 수 있습니다.
+
+CI는 현재 다음을 확인합니다.
+
+- `game-core.js`, `app.js` JavaScript 문법 검사
+- 경제/시장 정보 자동 테스트
+- `server.py` Python 문법 검사
+- 개발 서버 실행 후 `/api/health` 응답 검증
+- 루트 웹 페이지가 정상 제공되는지 스모크 테스트
+
+로컬에서는 다음 명령으로 핵심 테스트를 실행할 수 있습니다.
+
+```bash
+cd prototype/web-v0
+npm test
+```

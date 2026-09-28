@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      runner:
+        description: Runner to use
+        required: true
+        default: local
+        type: choice
+        options:
+          - local
+          - github
+
+permissions:
+  contents: read
+
+jobs:
+  prototype:
+    name: Prototype checks
+    runs-on: ${{ fromJSON((((github.event_name == 'workflow_dispatch' && inputs.runner == 'github') || (github.event_name == 'pull_request' && (github.event.pull_request.head.repo.full_name != github.repository || contains(github.event.pull_request.labels.*.name, 'ci:github-hosted')))) && '["ubuntu-latest"]') || '["self-hosted","merchant-globe"]') }}
+    timeout-minutes: 15
+
+    defaults:
+      run:
+        working-directory: prototype/web-v0
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Show runner environment
+        run: |
+          echo "Runner: $RUNNER_NAME"
+          echo "OS: $RUNNER_OS"
+          echo "Arch: $RUNNER_ARCH"
+          echo "Event: $GITHUB_EVENT_NAME"
+          node --version
+          python --version
+
+      - name: Check JavaScript syntax
+        run: |
+          node --check game-core.js
+          node --check app.js
+
+      - name: Run economy tests
+        run: npm test
+
+      - name: Check Python server syntax
+        run: python -m py_compile server.py
+
+      - name: Smoke test development server
+        run: python tests/smoke_test.py
