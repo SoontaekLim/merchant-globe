@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#0f172a" />
+  <title>Merchant Globe MVP</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">TRADE SIMULATION MVP</p>
+        <h1>Merchant Globe</h1>
+      </div>
+      <button id="newGameBtn" class="secondary-button" type="button">새 게임</button>
+    </header>
+
+    <main>
+      <section class="status-grid" aria-label="현재 상태">
+        <article class="stat-card"><span>현재 도시</span><strong id="currentCity">서울</strong><small id="cityCountry">대한민국</small></article>
+        <article class="stat-card"><span>날짜</span><strong id="day">1 / 30</strong><small>거래 기간</small></article>
+        <article class="stat-card"><span>현금</span><strong id="cash">₩10,000</strong><small>사용 가능 자금</small></article>
+        <article class="stat-card accent"><span>총 자산</span><strong id="assets">₩10,000</strong><small>현재 도시 시세 기준</small></article>
+      </section>
+
+      <section class="news-panel">
+        <div>
+          <p class="section-label">MARKET INTELLIGENCE</p>
+          <h2 id="newsTitle">시장 정보</h2>
+        </div>
+        <p id="newsText">서울 시장에서 거래를 시작했습니다. 가격뿐 아니라 재고와 수요를 함께 살펴보세요.</p>
+      </section>
+
+      <div class="game-layout">
+        <section class="panel market-panel">
+          <div class="panel-heading">
+            <div>
+              <p class="section-label">LOCAL MARKET</p>
+              <h2><span id="marketCity">서울</span> 시장</h2>
+              <p id="marketSummary" class="muted"></p>
+            </div>
+            <label class="quantity-control">거래 수량
+              <input id="tradeQty" type="number" min="1" max="99" value="1" inputmode="numeric" />
+            </label>
+          </div>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>상품</th>
+                  <th class="number">현재가</th>
+                  <th class="number">시장 재고</th>
+                  <th class="number">수요</th>
+                  <th class="number">기준가 대비</th>
+                  <th class="number">보유</th>
+                  <th class="number">평균매입</th>
+                  <th class="number">보유손익</th>
+                  <th>거래</th>
+                </tr>
+              </thead>
+              <tbody id="marketBody"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <aside class="side-stack">
+          <section class="panel cargo-panel">
+            <div class="panel-heading compact">
+              <div>
+                <p class="section-label">CARGO</p>
+                <h2>화물칸</h2>
+              </div>
+              <strong id="cargoCount">0 / 20</strong>
+            </div>
+            <div class="progress"><div id="cargoBar"></div></div>
+            <div id="inventoryList" class="inventory-list"></div>
+            <div class="upgrade-box">
+              <div>
+                <strong>화물칸 +5</strong>
+                <span id="upgradeCost">₩8,000</span>
+              </div>
+              <button id="upgradeCargoBtn" class="secondary-button" type="button">확장</button>
+            </div>
+          </section>
+
+          <section class="panel travel-panel">
+            <div class="panel-heading compact">
+              <div>
+                <p class="section-label">ROUTES</p>
+                <h2>다음 도시</h2>
+              </div>
+            </div>
+            <p class="muted route-help">이동하면 날짜가 지나며 재고·수요·시세가 균형을 향해 움직입니다.</p>
+            <div id="routeList" class="route-list"></div>
+          </section>
+        </aside>
+      </div>
+
+      <section class="bottom-grid">
+        <article class="panel">
+          <div class="panel-heading compact">
+            <div>
+              <p class="section-label">ACTIVE EVENTS</p>
+              <h2>시장 사건</h2>
+            </div>
+          </div>
+          <div id="eventList" class="event-list"></div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-heading compact">
+            <div>
+              <p class="section-label">TRADE LOG</p>
+              <h2>최근 기록</h2>
+            </div>
+          </div>
+          <div id="tradeLog" class="trade-log"></div>
+        </article>
+      </section>
+
+      <section id="gameOverPanel" class="game-over" hidden>
+        <p class="section-label">30 DAY RESULT</p>
+        <h2>첫 거래 기간이 종료되었습니다</h2>
+        <p id="gameOverSummary"></p>
+        <div id="resultStats" class="result-grid"></div>
+        <button id="restartBtn" class="primary-button" type="button">다시 시작</button>
+      </section>
+    </main>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  </div>
+
+  <script src="game-core.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
