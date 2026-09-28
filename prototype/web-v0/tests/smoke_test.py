@@ -44,7 +44,7 @@ def main() -> None:
         health = json.loads(health_text)
         assert health["ok"] is True
         assert health["service"] == "merchant-globe-mvp"
-        assert health["version"] == "0.3.0"
+        assert health["version"] == "0.4.0"
 
         index = read_url("/")
         assert "Merchant Globe" in index
