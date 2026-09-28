@@ -1,0 +1,458 @@
+(function (global) {
+  'use strict';
+
+  const PRODUCTS = [
+    { id: 'rice', name: '쌀', basePrice: 620, volatility: 0.07 },
+    { id: 'tea', name: '차', basePrice: 880, volatility: 0.10 },
+    { id: 'silk', name: '비단', basePrice: 1500, volatility: 0.12 },
+    { id: 'ceramic', name: '도자기', basePrice: 1250, volatility: 0.10 },
+    { id: 'ginseng', name: '인삼', basePrice: 1900, volatility: 0.14 },
+    { id: 'timber', name: '목재', basePrice: 720, volatility: 0.08 },
+    { id: 'iron', name: '철', basePrice: 1050, volatility: 0.09 },
+    { id: 'spice', name: '향신료', basePrice: 1650, volatility: 0.16 },
+    { id: 'fish', name: '수산물', basePrice: 540, volatility: 0.12 },
+    { id: 'paper', name: '종이', basePrice: 760, volatility: 0.07 },
+    { id: 'cotton', name: '면직물', basePrice: 980, volatility: 0.09 },
+    { id: 'copper', name: '구리', basePrice: 1180, volatility: 0.10 }
+  ];
+
+  const CITIES = {
+    seoul: {
+      id: 'seoul', name: '서울', country: '대한민국',
+      summary: '인삼과 종이가 저렴한 균형형 시장',
+      modifiers: { rice: 0.82, tea: 1.08, silk: 1.05, ceramic: 0.88, ginseng: 0.68, timber: 1.05, iron: 1.08, spice: 1.24, fish: 1.02, paper: 0.86, cotton: 1.04, copper: 1.12 }
+    },
+    busan: {
+      id: 'busan', name: '부산', country: '대한민국',
+      summary: '수산물과 해상 물류가 강한 항구 시장',
+      modifiers: { rice: 0.94, tea: 1.02, silk: 1.11, ceramic: 1.02, ginseng: 0.88, timber: 0.96, iron: 0.98, spice: 1.10, fish: 0.67, paper: 1.01, cotton: 1.06, copper: 1.00 }
+    },
+    fukuoka: {
+      id: 'fukuoka', name: '후쿠오카', country: '일본',
+      summary: '차와 목재가 비교적 저렴한 근거리 교역 시장',
+      modifiers: { rice: 1.06, tea: 0.86, silk: 1.16, ceramic: 0.92, ginseng: 1.34, timber: 0.90, iron: 1.02, spice: 1.13, fish: 0.76, paper: 0.93, cotton: 1.08, copper: 1.04 }
+    },
+    osaka: {
+      id: 'osaka', name: '오사카', country: '일본',
+      summary: '도자기·철·구리 거래가 활발한 대형 소비시장',
+      modifiers: { rice: 1.11, tea: 0.93, silk: 0.94, ceramic: 0.82, ginseng: 1.38, timber: 1.07, iron: 0.87, spice: 1.04, fish: 0.91, paper: 0.88, cotton: 0.91, copper: 0.86 }
+    },
+    shanghai: {
+      id: 'shanghai', name: '상하이', country: '중국',
+      summary: '차·비단·면직물이 저렴한 대형 생산시장',
+      modifiers: { rice: 0.96, tea: 0.66, silk: 0.69, ceramic: 0.76, ginseng: 1.27, timber: 1.13, iron: 1.12, spice: 0.83, fish: 1.08, paper: 0.79, cotton: 0.78, copper: 1.08 }
+    }
+  };
+
+  const ROUTES = {
+    seoul: { busan: [380, 1], fukuoka: [620, 2], osaka: [760, 2], shanghai: [980, 3] },
+    busan: { seoul: [380, 1], fukuoka: [320, 1], osaka: [470, 1], shanghai: [730, 2] },
+    fukuoka: { seoul: [620, 2], busan: [320, 1], osaka: [350, 1], shanghai: [690, 2] },
+    osaka: { seoul: [760, 2], busan: [470, 1], fukuoka: [350, 1], shanghai: [820, 2] },
+    shanghai: { seoul: [980, 3], busan: [730, 2], fukuoka: [690, 2], osaka: [820, 2] }
+  };
+
+  function hashSeed(value) {
+    let h = 2166136261 >>> 0;
+    const str = String(value == null ? 'merchant-globe' : value);
+    for (let i = 0; i < str.length; i++) {
+      h ^= str.charCodeAt(i);
+      h = Math.imul(h, 16777619);
+    }
+    return h >>> 0;
+  }
+
+  function createRng(seed) {
+    let state = hashSeed(seed) || 1;
+    return function rng() {
+      state ^= state << 13;
+      state ^= state >>> 17;
+      state ^= state << 5;
+      state >>>= 0;
+      return state / 4294967296;
+    };
+  }
+
+  function round10(n) { return Math.max(10, Math.round(n / 10) * 10); }
+  function clamp(n, min, max) { return Math.max(min, Math.min(max, n)); }
+  function deepClone(value) { return JSON.parse(JSON.stringify(value)); }
+
+  class Game {
+    constructor(options) {
+      const opts = options || {};
+      this.rng = createRng(opts.seed || Date.now());
+      this.maxDay = opts.maxDay || 30;
+      this.reset();
+    }
+
+    reset() {
+      this.day = 1;
+      this.cityId = 'seoul';
+      this.cash = 10000;
+      this.capacity = 20;
+      this.cargoUpgradeLevel = 0;
+      this.inventory = {};
+      this.market = {};
+      this.marketDynamics = {};
+      this.events = [];
+      this.logs = [];
+      this.gameOver = false;
+      this.stats = {
+        buys: 0,
+        sells: 0,
+        trips: 0,
+        revenue: 0,
+        realizedProfit: 0,
+        transportCost: 0,
+        unitsBought: 0,
+        unitsSold: 0
+      };
+      PRODUCTS.forEach((p) => { this.inventory[p.id] = { qty: 0, avgCost: 0 }; });
+      this.initializeMarkets();
+      this.addLog('서울에서 작은 상인으로 거래를 시작했습니다.');
+      return this.snapshot();
+    }
+
+    initializeMarkets() {
+      Object.keys(CITIES).forEach((cityId) => {
+        this.market[cityId] = {};
+        this.marketDynamics[cityId] = {};
+        PRODUCTS.forEach((p) => {
+          const modifier = CITIES[cityId].modifiers[p.id];
+          const base = p.basePrice * modifier;
+          const priceJitter = 1 + (this.rng() - 0.5) * p.volatility * 1.2;
+          const targetStock = Math.round(clamp(62 / modifier, 38, 96));
+          const targetDemand = Math.round(clamp(90 * modifier, 62, 128));
+          const initialStock = Math.round(targetStock * (0.88 + this.rng() * 0.24));
+          const initialDemand = Math.round(targetDemand * (0.92 + this.rng() * 0.16));
+
+          this.market[cityId][p.id] = round10(base * priceJitter);
+          this.marketDynamics[cityId][p.id] = {
+            stock: initialStock,
+            targetStock,
+            demand: initialDemand,
+            targetDemand
+          };
+        });
+      });
+    }
+
+    snapshot() {
+      return {
+        day: this.day,
+        maxDay: this.maxDay,
+        cityId: this.cityId,
+        cash: this.cash,
+        capacity: this.capacity,
+        cargoUpgradeLevel: this.cargoUpgradeLevel,
+        inventory: deepClone(this.inventory),
+        marketDynamics: deepClone(this.marketDynamics),
+        events: this.events.map((e) => ({ ...e })),
+        logs: this.logs.slice(),
+        gameOver: this.gameOver,
+        stats: { ...this.stats },
+        totalAssets: this.totalAssets(),
+        cargoUsed: this.cargoUsed()
+      };
+    }
+
+    getProduct(id) { return PRODUCTS.find((p) => p.id === id); }
+    getCity(id) { return CITIES[id]; }
+    getRoute(from, to) { return ROUTES[from] && ROUTES[from][to] ? ROUTES[from][to] : null; }
+
+    getMarketState(cityId, productId) {
+      if (!this.marketDynamics[cityId] || !this.marketDynamics[cityId][productId]) {
+        throw new Error('시장 정보를 찾을 수 없습니다.');
+      }
+      return this.marketDynamics[cityId][productId];
+    }
+
+    activeEventTargets(cityId, productId) {
+      let stockTargetMultiplier = 1;
+      let demandTargetMultiplier = 1;
+      this.events
+        .filter((e) => e.cityId === cityId && e.productId === productId && e.expiresDay >= this.day)
+        .forEach((e) => {
+          stockTargetMultiplier *= e.stockTargetMultiplier || 1;
+          demandTargetMultiplier *= e.demandTargetMultiplier || 1;
+        });
+      return { stockTargetMultiplier, demandTargetMultiplier };
+    }
+
+    marketInfo(cityId, productId) {
+      const state = this.getMarketState(cityId, productId);
+      const stockRatio = state.stock / state.targetStock;
+      const demandRatio = state.demand / state.targetDemand;
+      const price = this.price(cityId, productId);
+      return {
+        price,
+        stock: Math.max(0, Math.floor(state.stock)),
+        targetStock: state.targetStock,
+        stockRatio,
+        stockLabel: this.stockLabel(stockRatio),
+        demand: state.demand,
+        targetDemand: state.targetDemand,
+        demandRatio,
+        demandLabel: this.demandLabel(demandRatio)
+      };
+    }
+
+    stockLabel(ratio) {
+      if (ratio <= 0.55) return '매우 부족';
+      if (ratio <= 0.78) return '부족';
+      if (ratio >= 1.45) return '과잉';
+      if (ratio >= 1.18) return '넉넉';
+      return '보통';
+    }
+
+    demandLabel(ratio) {
+      if (ratio >= 1.24) return '매우 높음';
+      if (ratio >= 1.08) return '높음';
+      if (ratio <= 0.76) return '매우 낮음';
+      if (ratio <= 0.92) return '낮음';
+      return '보통';
+    }
+
+    priceFromState(cityId, productId, stock, demand) {
+      const anchor = this.market[cityId][productId];
+      const state = this.getMarketState(cityId, productId);
+      const stockPressure = clamp(Math.pow(state.targetStock / Math.max(1, stock), 0.38), 0.72, 1.38);
+      const demandPressure = clamp(Math.pow(demand / Math.max(1, state.targetDemand), 0.52), 0.78, 1.30);
+      return round10(anchor * stockPressure * demandPressure);
+    }
+
+    price(cityId, productId) {
+      const state = this.getMarketState(cityId, productId);
+      return this.priceFromState(cityId, productId, state.stock, state.demand);
+    }
+
+    executionPrice(cityId, productId, quantity, side) {
+      const state = this.getMarketState(cityId, productId);
+      const qty = Math.max(1, Math.floor(Number(quantity) || 1));
+      const startPrice = this.priceFromState(cityId, productId, state.stock, state.demand);
+      const maxStock = state.targetStock * 2.5;
+      const endStock = side === 'buy'
+        ? Math.max(0.01, state.stock - qty)
+        : Math.min(maxStock, state.stock + qty);
+      const endPrice = this.priceFromState(cityId, productId, endStock, state.demand);
+      const midpoint = (startPrice + endPrice) / 2;
+      const spread = side === 'buy' ? 1.015 : 0.985;
+      return round10(midpoint * spread);
+    }
+
+    cargoUsed() {
+      return PRODUCTS.reduce((sum, p) => sum + this.inventory[p.id].qty, 0);
+    }
+
+    totalAssets() {
+      return this.cash + PRODUCTS.reduce((sum, p) => sum + this.inventory[p.id].qty * this.price(this.cityId, p.id), 0);
+    }
+
+    buy(productId, quantity) {
+      this.ensureActive();
+      const product = this.getProduct(productId);
+      const qty = Math.max(1, Math.floor(Number(quantity) || 1));
+      if (!product) throw new Error('존재하지 않는 상품입니다.');
+
+      const marketState = this.getMarketState(this.cityId, productId);
+      const available = Math.max(0, Math.floor(marketState.stock));
+      if (available < qty) throw new Error(`시장 재고가 부족합니다. 현재 ${available}개 구매할 수 있습니다.`);
+
+      const unitPrice = this.executionPrice(this.cityId, productId, qty, 'buy');
+      const total = unitPrice * qty;
+      if (this.cargoUsed() + qty > this.capacity) throw new Error('화물칸이 부족합니다.');
+      if (this.cash < total) throw new Error('현금이 부족합니다.');
+
+      const item = this.inventory[productId];
+      const previousValue = item.qty * item.avgCost;
+      item.qty += qty;
+      item.avgCost = (previousValue + total) / item.qty;
+      this.cash -= total;
+      marketState.stock = Math.max(0, marketState.stock - qty);
+      this.stats.buys += 1;
+      this.stats.unitsBought += qty;
+      this.addLog(`${product.name} ${qty}개 매입 · 평균 체결 ${this.money(unitPrice)}/개 · 시장 재고 ${Math.floor(marketState.stock)}개`);
+      return {
+        type: 'buy', productId, qty, unitPrice, total,
+        stockAfter: Math.floor(marketState.stock),
+        nextPrice: this.price(this.cityId, productId)
+      };
+    }
+
+    sell(productId, quantity) {
+      this.ensureActive();
+      const product = this.getProduct(productId);
+      const qty = Math.max(1, Math.floor(Number(quantity) || 1));
+      if (!product) throw new Error('존재하지 않는 상품입니다.');
+      const item = this.inventory[productId];
+      if (item.qty < qty) throw new Error('보유 수량이 부족합니다.');
+
+      const marketState = this.getMarketState(this.cityId, productId);
+      const unitPrice = this.executionPrice(this.cityId, productId, qty, 'sell');
+      const revenue = unitPrice * qty;
+      const profit = (unitPrice - item.avgCost) * qty;
+      item.qty -= qty;
+      if (item.qty === 0) item.avgCost = 0;
+      this.cash += revenue;
+      marketState.stock = Math.min(marketState.targetStock * 2.5, marketState.stock + qty);
+      this.stats.sells += 1;
+      this.stats.unitsSold += qty;
+      this.stats.revenue += revenue;
+      this.stats.realizedProfit += profit;
+      this.addLog(`${product.name} ${qty}개 판매 · 평균 체결 ${this.money(unitPrice)}/개 · ${profit >= 0 ? '+' : ''}${this.money(profit)} 손익 · 시장 재고 ${Math.floor(marketState.stock)}개`);
+      return {
+        type: 'sell', productId, qty, unitPrice, revenue, profit,
+        stockAfter: Math.floor(marketState.stock),
+        nextPrice: this.price(this.cityId, productId)
+      };
+    }
+
+    travel(destinationId) {
+      this.ensureActive();
+      if (!CITIES[destinationId]) throw new Error('존재하지 않는 도시입니다.');
+      if (destinationId === this.cityId) throw new Error('이미 현재 도시에 있습니다.');
+      const route = this.getRoute(this.cityId, destinationId);
+      if (!route) throw new Error('이동 가능한 항로가 없습니다.');
+      const [cost, days] = route;
+      if (this.cash < cost) throw new Error('운송비가 부족합니다.');
+
+      const from = this.cityId;
+      this.cash -= cost;
+      this.stats.transportCost += cost;
+      this.stats.trips += 1;
+      this.cityId = destinationId;
+      const newEvents = this.advanceEconomy(days);
+      this.addLog(`${CITIES[from].name} → ${CITIES[destinationId].name} 이동 · ${days}일 / ${this.money(cost)}`);
+
+      if (this.day >= this.maxDay) {
+        this.day = this.maxDay;
+        this.gameOver = true;
+        this.addLog(`30일 거래가 종료되었습니다. 최종 자산 ${this.money(this.totalAssets())}`);
+      }
+      return { type: 'travel', from, to: destinationId, cost, days, event: newEvents[newEvents.length - 1] || null };
+    }
+
+    advanceEconomy(days) {
+      const createdEvents = [];
+      for (let step = 0; step < days; step++) {
+        this.day += 1;
+        this.events = this.events.filter((e) => e.expiresDay >= this.day);
+
+        Object.keys(CITIES).forEach((cityId) => {
+          PRODUCTS.forEach((p) => {
+            const baseline = p.basePrice * CITIES[cityId].modifiers[p.id];
+            const oldAnchor = this.market[cityId][p.id];
+            const noise = (this.rng() - 0.5) * 2 * p.volatility;
+            const candidate = oldAnchor * 0.72 + baseline * (1 + noise) * 0.28;
+            this.market[cityId][p.id] = round10(clamp(candidate, baseline * 0.72, baseline * 1.34));
+
+            const state = this.getMarketState(cityId, p.id);
+            const activeTargets = this.activeEventTargets(cityId, p.id);
+            const effectiveStockTarget = state.targetStock * activeTargets.stockTargetMultiplier;
+            const effectiveDemandTarget = state.targetDemand * activeTargets.demandTargetMultiplier;
+
+            const stockRecovery = (effectiveStockTarget - state.stock) * 0.24;
+            const stockNoise = (this.rng() - 0.5) * 3.2;
+            state.stock = clamp(state.stock + stockRecovery + stockNoise, 1, state.targetStock * 2.5);
+
+            const demandRecovery = (effectiveDemandTarget - state.demand) * 0.30;
+            const demandNoise = (this.rng() - 0.5) * (6 + p.volatility * 28);
+            state.demand = clamp(state.demand + demandRecovery + demandNoise, state.targetDemand * 0.55, state.targetDemand * 1.65);
+          });
+        });
+
+        if (this.rng() < 0.38) {
+          const event = this.createEvent();
+          createdEvents.push(event);
+        }
+      }
+      return createdEvents;
+    }
+
+    createEvent() {
+      const cityIds = Object.keys(CITIES);
+      const cityId = cityIds[Math.floor(this.rng() * cityIds.length)];
+      const product = PRODUCTS[Math.floor(this.rng() * PRODUCTS.length)];
+      const demandBoom = this.rng() > 0.5;
+      const duration = 2 + Math.floor(this.rng() * 3);
+      const state = this.getMarketState(cityId, product.id);
+
+      let event;
+      if (demandBoom) {
+        const demandBoost = 1.18 + this.rng() * 0.16;
+        state.demand = clamp(state.demand * demandBoost, state.targetDemand * 0.55, state.targetDemand * 1.65);
+        event = {
+          id: `evt-${this.day}-${Math.floor(this.rng() * 100000)}`,
+          kind: 'demand',
+          cityId,
+          productId: product.id,
+          demandTargetMultiplier: 1.16,
+          stockTargetMultiplier: 1,
+          impact: Math.round((demandBoost - 1) * 100),
+          createdDay: this.day,
+          expiresDay: Math.min(this.maxDay, this.day + duration),
+          title: `${CITIES[cityId].name} ${product.name} 수요 급증`,
+          description: `${CITIES[cityId].name}에서 ${product.name} 수요가 크게 늘었습니다. 수요가 유지되는 동안 가격 상승 압력이 생깁니다.`
+        };
+      } else {
+        const supplyBoost = 0.28 + this.rng() * 0.22;
+        const addedStock = Math.max(8, Math.round(state.targetStock * supplyBoost));
+        state.stock = clamp(state.stock + addedStock, 1, state.targetStock * 2.5);
+        event = {
+          id: `evt-${this.day}-${Math.floor(this.rng() * 100000)}`,
+          kind: 'supply',
+          cityId,
+          productId: product.id,
+          demandTargetMultiplier: 1,
+          stockTargetMultiplier: 1.24,
+          impact: addedStock,
+          createdDay: this.day,
+          expiresDay: Math.min(this.maxDay, this.day + duration),
+          title: `${CITIES[cityId].name} ${product.name} 공급 증가`,
+          description: `${CITIES[cityId].name}에 ${product.name} 물량 ${addedStock}개가 추가 유입되었습니다. 재고가 많은 동안 가격 하락 압력이 생깁니다.`
+        };
+      }
+
+      this.events.push(event);
+      return event;
+    }
+
+    latestEvent() {
+      if (!this.events.length) return null;
+      return this.events[this.events.length - 1];
+    }
+
+    upgradeCargo() {
+      this.ensureActive();
+      const cost = this.cargoUpgradeCost();
+      if (this.cash < cost) throw new Error('업그레이드 비용이 부족합니다.');
+      this.cash -= cost;
+      this.capacity += 5;
+      this.cargoUpgradeLevel += 1;
+      this.addLog(`화물칸 확장 · ${this.capacity}칸으로 증가`);
+      return { cost, capacity: this.capacity };
+    }
+
+    cargoUpgradeCost() {
+      return 8000 + this.cargoUpgradeLevel * 7000;
+    }
+
+    ensureActive() {
+      if (this.gameOver) throw new Error('이번 거래 기간이 종료되었습니다. 새 게임을 시작하세요.');
+    }
+
+    addLog(text) {
+      this.logs.unshift({ day: this.day, text });
+      this.logs = this.logs.slice(0, 16);
+    }
+
+    money(value) {
+      const n = Math.round(Number(value) || 0);
+      return `₩${n.toLocaleString('ko-KR')}`;
+    }
+  }
+
+  const api = { Game, PRODUCTS, CITIES, ROUTES };
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+  global.MerchantGlobeCore = api;
+})(typeof window !== 'undefined' ? window : globalThis);
