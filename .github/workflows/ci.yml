@@ -12,7 +12,11 @@ permissions:
 jobs:
   prototype:
     name: Prototype checks
-    runs-on: ubuntu-latest
+    runs-on:
+      - self-hosted
+      - merchant-globe
+    timeout-minutes: 15
+
     defaults:
       run:
         working-directory: prototype/web-v0
@@ -30,6 +34,14 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
+      - name: Show runner environment
+        run: |
+          echo "Runner: $RUNNER_NAME"
+          echo "OS: $RUNNER_OS"
+          echo "Arch: $RUNNER_ARCH"
+          node --version
+          python --version
 
       - name: Check JavaScript syntax
         run: |
