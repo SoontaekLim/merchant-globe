@@ -63,7 +63,7 @@ merchant-globe/
 
 ## 개발 검증
 
-모든 Pull Request와 `main` 브랜치 push에서 GitHub Actions CI가 자동 실행됩니다.
+모든 Pull Request와 `main` 브랜치 push에서 GitHub Actions CI가 자동 실행됩니다. CI는 `self-hosted` + `merchant-globe` 레이블 러너에서 실행됩니다.
 
 CI는 현재 다음을 확인합니다.
 
