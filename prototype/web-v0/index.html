@@ -99,6 +99,29 @@
         </aside>
       </div>
 
+
+      <section class="panel intel-panel">
+        <div class="panel-heading intel-heading">
+          <div>
+            <p class="section-label">MARKET NETWORK</p>
+            <h2>원격 시장 정보</h2>
+            <p id="intelSummary" class="muted">현재 도시 밖의 정보는 제한되거나 오래되었을 수 있습니다.</p>
+          </div>
+          <div class="intel-upgrade">
+            <div><span>정보망</span><strong id="intelLevelText">현지 장부 Lv.0</strong><small id="intelLevelDetail">방문한 도시의 마지막 시세만 기록</small></div>
+            <button id="upgradeIntelBtn" class="secondary-button" type="button">정보망 확장</button>
+          </div>
+        </div>
+        <div id="intelCityTabs" class="intel-city-tabs" aria-label="시장 정보 도시 선택"></div>
+        <div id="intelEmpty" class="intel-empty" hidden></div>
+        <div id="intelTableWrap" class="table-wrap">
+          <table class="intel-table">
+            <thead><tr><th>상품</th><th class="number">확인 시세</th><th>재고</th><th>수요</th><th>변화</th><th class="number">정보 시점</th></tr></thead>
+            <tbody id="intelBody"></tbody>
+          </table>
+        </div>
+      </section>
+
       <section class="bottom-grid">
         <article class="panel">
           <div class="panel-heading compact">

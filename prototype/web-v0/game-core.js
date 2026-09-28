@@ -44,6 +44,13 @@
     }
   };
 
+  const INTEL_LEVELS = [
+    { level: 0, name: '현지 장부', coverage: 0, refreshDays: null, cost: 6000 },
+    { level: 1, name: '지역 정보망', coverage: 3, refreshDays: 3, cost: 14000 },
+    { level: 2, name: '광역 정보망', coverage: 6, refreshDays: 2, cost: 28000 },
+    { level: 3, name: '글로벌 정보망', coverage: 12, refreshDays: 1, cost: null }
+  ];
+
   const ROUTES = {
     seoul: { busan: [380, 1], fukuoka: [620, 2], osaka: [760, 2], shanghai: [980, 3] },
     busan: { seoul: [380, 1], fukuoka: [320, 1], osaka: [470, 1], shanghai: [730, 2] },
@@ -91,6 +98,8 @@
       this.cash = 10000;
       this.capacity = 20;
       this.cargoUpgradeLevel = 0;
+      this.intelLevel = 0;
+      this.intelSnapshots = {};
       this.inventory = {};
       this.market = {};
       this.marketDynamics = {};
@@ -109,6 +118,7 @@
       };
       PRODUCTS.forEach((p) => { this.inventory[p.id] = { qty: 0, avgCost: 0 }; });
       this.initializeMarkets();
+      this.captureIntel(this.cityId, PRODUCTS.map((p) => p.id));
       this.addLog('서울에서 작은 상인으로 거래를 시작했습니다.');
       return this.snapshot();
     }
@@ -145,6 +155,8 @@
         cash: this.cash,
         capacity: this.capacity,
         cargoUpgradeLevel: this.cargoUpgradeLevel,
+        intelLevel: this.intelLevel,
+        intelSnapshots: deepClone(this.intelSnapshots),
         inventory: deepClone(this.inventory),
         marketDynamics: deepClone(this.marketDynamics),
         events: this.events.map((e) => ({ ...e })),
@@ -159,6 +171,126 @@
     getProduct(id) { return PRODUCTS.find((p) => p.id === id); }
     getCity(id) { return CITIES[id]; }
     getRoute(from, to) { return ROUTES[from] && ROUTES[from][to] ? ROUTES[from][to] : null; }
+
+    intelLevelInfo() {
+      return INTEL_LEVELS[this.intelLevel];
+    }
+
+    intelUpgradeCost() {
+      const next = INTEL_LEVELS[this.intelLevel + 1];
+      return next ? INTEL_LEVELS[this.intelLevel].cost : null;
+    }
+
+    distinctiveProducts(cityId, count) {
+      const city = CITIES[cityId];
+      return PRODUCTS
+        .slice()
+        .sort((a, b) => {
+          const da = Math.abs(Math.log(city.modifiers[a.id] || 1));
+          const db = Math.abs(Math.log(city.modifiers[b.id] || 1));
+          if (db !== da) return db - da;
+          return a.id.localeCompare(b.id);
+        })
+        .slice(0, count)
+        .map((p) => p.id);
+    }
+
+    captureIntel(cityId, productIds) {
+      if (!this.intelSnapshots[cityId]) this.intelSnapshots[cityId] = {};
+      const ids = productIds || PRODUCTS.map((p) => p.id);
+      ids.forEach((productId) => {
+        const info = this.marketInfo(cityId, productId);
+        const previous = this.intelSnapshots[cityId][productId];
+        this.intelSnapshots[cityId][productId] = {
+          productId,
+          price: info.price,
+          stockLabel: info.stockLabel,
+          demandLabel: info.demandLabel,
+          capturedDay: this.day,
+          previousPrice: previous ? previous.price : null
+        };
+      });
+    }
+
+    refreshRemoteIntel(force) {
+      const level = this.intelLevelInfo();
+      if (!level || level.coverage <= 0) return;
+      Object.keys(CITIES).forEach((cityId) => {
+        if (cityId === this.cityId) return;
+        const productIds = this.distinctiveProducts(cityId, level.coverage);
+        productIds.forEach((productId) => {
+          const current = this.intelSnapshots[cityId] && this.intelSnapshots[cityId][productId];
+          const age = current ? this.day - current.capturedDay : Infinity;
+          if (force || !current || age >= level.refreshDays) this.captureIntel(cityId, [productId]);
+        });
+      });
+    }
+
+    remoteIntel(cityId) {
+      if (!CITIES[cityId]) throw new Error('존재하지 않는 도시입니다.');
+      if (cityId === this.cityId) {
+        return {
+          cityId,
+          live: true,
+          level: this.intelLevel,
+          entries: PRODUCTS.map((p) => {
+            const info = this.marketInfo(cityId, p.id);
+            return { productId: p.id, price: info.price, stockLabel: info.stockLabel, demandLabel: info.demandLabel, capturedDay: this.day, age: 0, trend: 'same' };
+          })
+        };
+      }
+      const snapshots = this.intelSnapshots[cityId] || {};
+      const entries = Object.values(snapshots)
+        .map((entry) => ({
+          ...entry,
+          age: Math.max(0, this.day - entry.capturedDay),
+          trend: entry.previousPrice == null ? 'same' : entry.price > entry.previousPrice ? 'up' : entry.price < entry.previousPrice ? 'down' : 'same'
+        }))
+        .sort((a, b) => {
+          const pa = PRODUCTS.findIndex((p) => p.id === a.productId);
+          const pb = PRODUCTS.findIndex((p) => p.id === b.productId);
+          return pa - pb;
+        });
+      return { cityId, live: false, level: this.intelLevel, entries };
+    }
+
+    marketRumors() {
+      return this.events
+        .filter((e) => e.expiresDay >= this.day)
+        .map((event) => {
+          const local = event.cityId === this.cityId;
+          if (local || this.intelLevel >= 2) return { ...event, precision: 'full' };
+          if (this.intelLevel === 1) {
+            return {
+              ...event,
+              impact: null,
+              description: `${CITIES[event.cityId].name}에서 ${this.getProduct(event.productId).name} 시장의 ${event.kind === 'demand' ? '수요가 강해지고' : '공급이 늘고'} 있다는 보고가 들어왔습니다.`,
+              precision: 'partial'
+            };
+          }
+          return {
+            ...event,
+            title: `${CITIES[event.cityId].name} ${this.getProduct(event.productId).name} 시장 소문`,
+            impact: null,
+            expiresDay: null,
+            description: `${CITIES[event.cityId].name}의 ${this.getProduct(event.productId).name} 시장에 평소와 다른 움직임이 있다는 소문입니다.`,
+            precision: 'rumor'
+          };
+        });
+    }
+
+    upgradeIntel() {
+      this.ensureActive();
+      if (this.intelLevel >= INTEL_LEVELS.length - 1) throw new Error('정보망이 이미 최고 단계입니다.');
+      const cost = this.intelUpgradeCost();
+      if (this.cash < cost) throw new Error('정보망 업그레이드 비용이 부족합니다.');
+      this.cash -= cost;
+      this.intelLevel += 1;
+      this.refreshRemoteIntel(true);
+      const info = this.intelLevelInfo();
+      this.addLog(`정보망 업그레이드 · ${info.name} Lv.${this.intelLevel}`);
+      return { cost, level: this.intelLevel, info: { ...info } };
+    }
 
     getMarketState(cityId, productId) {
       if (!this.marketDynamics[cityId] || !this.marketDynamics[cityId][productId]) {
@@ -317,11 +449,13 @@
       if (this.cash < cost) throw new Error('운송비가 부족합니다.');
 
       const from = this.cityId;
+      this.captureIntel(from, PRODUCTS.map((p) => p.id));
       this.cash -= cost;
       this.stats.transportCost += cost;
       this.stats.trips += 1;
-      this.cityId = destinationId;
       const newEvents = this.advanceEconomy(days);
+      this.cityId = destinationId;
+      this.captureIntel(destinationId, PRODUCTS.map((p) => p.id));
       this.addLog(`${CITIES[from].name} → ${CITIES[destinationId].name} 이동 · ${days}일 / ${this.money(cost)}`);
 
       if (this.day >= this.maxDay) {
@@ -365,6 +499,7 @@
           const event = this.createEvent();
           createdEvents.push(event);
         }
+        this.refreshRemoteIntel(false);
       }
       return createdEvents;
     }
@@ -452,7 +587,7 @@
     }
   }
 
-  const api = { Game, PRODUCTS, CITIES, ROUTES };
+  const api = { Game, PRODUCTS, CITIES, ROUTES, INTEL_LEVELS };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   global.MerchantGlobeCore = api;
 })(typeof window !== 'undefined' ? window : globalThis);
