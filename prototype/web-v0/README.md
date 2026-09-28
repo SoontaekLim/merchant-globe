@@ -41,12 +41,14 @@
 
 ## 실행
 
-Python 3만 있으면 별도 패키지 설치 없이 실행됩니다.
+저장소 루트에서:
 
 ```bash
-cd merchant-globe-mvp
+cd prototype/web-v0
 python3 server.py
 ```
+
+Python 3만 있으면 별도 패키지 설치 없이 실행됩니다.
 
 브라우저:
 
@@ -62,7 +64,7 @@ http://127.0.0.1:8000/api/health
 
 ## 테스트
 
-Node.js가 설치되어 있다면:
+Node.js가 설치되어 있다면 `prototype/web-v0`에서:
 
 ```bash
 npm test
@@ -73,7 +75,7 @@ npm test
 ## 파일 구조
 
 ```text
-merchant-globe-mvp/
+prototype/web-v0/
 ├── index.html
 ├── styles.css
 ├── app.js
