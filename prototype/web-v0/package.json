@@ -1,0 +1,9 @@
+{
+  "name": "merchant-globe-mvp",
+  "version": "0.2.0",
+  "private": true,
+  "scripts": {
+    "dev": "python3 server.py",
+    "test": "node tests/game-core.test.js"
+  }
+}
