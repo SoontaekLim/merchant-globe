@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  prototype:
+    name: Prototype checks
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: prototype/web-v0
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Check JavaScript syntax
+        run: |
+          node --check game-core.js
+          node --check app.js
+
+      - name: Run economy tests
+        run: npm test
+
+      - name: Check Python server syntax
+        run: python -m py_compile server.py
+
+      - name: Smoke test development server
+        run: |
+          python server.py > /tmp/merchant-globe-server.log 2>&1 &
+          SERVER_PID=$!
+          trap 'kill $SERVER_PID' EXIT
+          for attempt in {1..10}; do
+            if curl --fail --silent http://127.0.0.1:8000/api/health > /tmp/merchant-globe-health.json; then
+              break
+            fi
+            sleep 1
+          done
+          cat /tmp/merchant-globe-health.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          health = json.loads(Path("/tmp/merchant-globe-health.json").read_text())
+          assert health["ok"] is True
+          assert health["service"] == "merchant-globe-mvp"
+          assert health["version"] == "0.3.0"
+          PY
+          curl --fail --silent --output /tmp/merchant-globe-index.html http://127.0.0.1:8000/
+          grep -q "Merchant Globe" /tmp/merchant-globe-index.html
