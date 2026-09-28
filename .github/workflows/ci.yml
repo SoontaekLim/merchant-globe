@@ -2,6 +2,7 @@ name: CI
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
   push:
     branches:
       - main
@@ -22,7 +23,7 @@ permissions:
 jobs:
   prototype:
     name: Prototype checks
-    runs-on: ${{ fromJSON((((github.event_name == 'workflow_dispatch' && inputs.runner == 'github') || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository)) && '["ubuntu-latest"]') || '["self-hosted","merchant-globe"]') }}
+    runs-on: ${{ fromJSON((((github.event_name == 'workflow_dispatch' && inputs.runner == 'github') || (github.event_name == 'pull_request' && (github.event.pull_request.head.repo.full_name != github.repository || contains(github.event.pull_request.labels.*.name, 'ci:github-hosted')))) && '["ubuntu-latest"]') || '["self-hosted","merchant-globe"]') }}
     timeout-minutes: 15
 
     defaults:
