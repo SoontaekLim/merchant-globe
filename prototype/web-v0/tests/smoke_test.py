@@ -7,6 +7,8 @@ import time
 from urllib.error import URLError
 from urllib.request import urlopen
 
+from server import DEFAULT_HOST, parse_args
+
 BASE_URL = "http://127.0.0.1:8000"
 
 
@@ -18,6 +20,10 @@ def read_url(path: str) -> str:
 
 
 def main() -> None:
+    assert DEFAULT_HOST == "127.0.0.1"
+    assert parse_args([]).host == "127.0.0.1"
+    assert parse_args(["--host", "0.0.0.0"]).host == "0.0.0.0"
+
     process = subprocess.Popen(
         [sys.executable, "server.py"],
         stdout=subprocess.PIPE,
