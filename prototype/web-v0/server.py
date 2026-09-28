@@ -18,7 +18,7 @@ class MerchantGlobeHandler(SimpleHTTPRequestHandler):
     def do_GET(self):
         path = urlparse(self.path).path
         if path == "/api/health":
-            self.send_json({"ok": True, "service": "merchant-globe-mvp", "version": "0.3.0"})
+            self.send_json({"ok": True, "service": "merchant-globe-mvp", "version": "0.4.0"})
             return
         if path == "/api/config":
             self.send_json({
