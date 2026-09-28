@@ -1,8 +1,9 @@
 (() => {
   'use strict';
 
-  const { Game, PRODUCTS, CITIES, ROUTES } = window.MerchantGlobeCore;
+  const { Game, PRODUCTS, CITIES, ROUTES, INTEL_LEVELS } = window.MerchantGlobeCore;
   let game = new Game({ maxDay: 30 });
+  let selectedIntelCity = 'busan';
   let toastTimer = null;
 
   const el = (id) => document.getElementById(id);
@@ -138,6 +139,7 @@
         const result = safeAction(() => game.travel(dest));
         if (result) {
           showToast(`${city.name} 도착 · ${result.days}일 경과`);
+          selectedIntelCity = result.from;
           updateNews(result.event);
         }
       });
@@ -145,19 +147,68 @@
     });
   }
 
+  function renderIntel() {
+    const level = game.intelLevelInfo();
+    const nextLevel = INTEL_LEVELS[game.intelLevel + 1];
+    const cost = game.intelUpgradeCost();
+    el('intelLevelText').textContent = `${level.name} Lv.${game.intelLevel}`;
+    el('intelLevelDetail').textContent = game.intelLevel === 0
+      ? '방문한 도시의 마지막 시세만 기록'
+      : `원격 도시 핵심 상품 ${level.coverage}개 · ${level.refreshDays}일마다 갱신`;
+    el('upgradeIntelBtn').textContent = nextLevel ? `확장 ${money(cost)}` : '최고 단계';
+    el('upgradeIntelBtn').disabled = !nextLevel || game.gameOver;
+
+    const tabs = el('intelCityTabs');
+    tabs.innerHTML = '';
+    Object.values(CITIES).forEach((city) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = `intel-city-button${city.id === selectedIntelCity ? ' active' : ''}${city.id === game.cityId ? ' current' : ''}`;
+      button.innerHTML = `<strong>${city.name}</strong><span>${city.id === game.cityId ? '현재 · 실시간' : '원격'}</span>`;
+      button.addEventListener('click', () => { selectedIntelCity = city.id; renderIntel(); });
+      tabs.appendChild(button);
+    });
+
+    const intel = game.remoteIntel(selectedIntelCity);
+    const city = CITIES[selectedIntelCity];
+    el('intelSummary').textContent = intel.live
+      ? `${city.name}은 현재 머무는 도시이므로 모든 시장 정보가 실시간입니다.`
+      : `${city.name} 원격 정보입니다. 오래된 보고는 도착할 때 실제 시세와 달라질 수 있습니다.`;
+
+    const empty = el('intelEmpty');
+    const tableWrap = el('intelTableWrap');
+    if (!intel.entries.length) {
+      empty.hidden = false;
+      tableWrap.hidden = true;
+      empty.innerHTML = `<strong>${city.name} 시세 정보가 없습니다.</strong><span>직접 방문하면 전체 시세가 기록됩니다. 정보망을 확장하면 원격 핵심 상품 보고서를 받을 수 있습니다.</span>`;
+      return;
+    }
+    empty.hidden = true;
+    tableWrap.hidden = false;
+
+    el('intelBody').innerHTML = intel.entries.map((entry) => {
+      const product = PRODUCTS.find((p) => p.id === entry.productId);
+      const trend = entry.trend === 'up' ? '↑ 상승' : entry.trend === 'down' ? '↓ 하락' : '→ 유지';
+      const trendClass = entry.trend === 'up' ? 'positive' : entry.trend === 'down' ? 'negative' : 'neutral';
+      const timing = intel.live ? '실시간' : entry.age === 0 ? `Day ${entry.capturedDay} · 오늘` : `Day ${entry.capturedDay} · ${entry.age}일 전`;
+      return `<tr><td><span class="product-name">${product.name}</span></td><td class="number"><strong>${money(entry.price)}</strong></td><td><span class="market-chip ${stateClass(entry.stockLabel)}">${entry.stockLabel}</span></td><td><span class="market-chip ${stateClass(entry.demandLabel)}">${entry.demandLabel}</span></td><td class="${trendClass}">${trend}</td><td class="number"><span class="intel-age${entry.age >= 3 ? ' stale' : ''}">${timing}</span></td></tr>`;
+    }).join('');
+  }
+
   function renderEvents() {
     const list = el('eventList');
-    const active = game.events.filter((e) => e.expiresDay >= game.day).slice().reverse();
+    const active = game.marketRumors().slice().reverse();
     if (!active.length) {
       list.innerHTML = '<div class="empty-state">현재 특별한 시장 사건이 없습니다.</div>';
       return;
     }
     list.innerHTML = active.slice(0, 6).map((event) => {
-      const effect = event.kind === 'demand'
+      const effect = event.impact == null ? '정보 불확실' : event.kind === 'demand'
         ? `수요 +${event.impact}%`
         : `재고 +${event.impact}개`;
-      const cls = event.kind === 'demand' ? 'positive' : 'market-cool-text';
-      return `<div class="event-row"><strong>${event.title} <span class="${cls}">${effect}</span></strong><span>${event.description} · ${event.expiresDay}일차까지</span></div>`;
+      const cls = event.impact == null ? 'neutral' : event.kind === 'demand' ? 'positive' : 'market-cool-text';
+      const until = event.expiresDay == null ? '' : ` · ${event.expiresDay}일차까지`;
+      return `<div class="event-row"><strong>${event.title} <span class="${cls}">${effect}</span></strong><span>${event.description}${until}</span></div>`;
     }).join('');
   }
 
@@ -168,8 +219,9 @@
 
   function updateNews(event) {
     if (event) {
-      el('newsTitle').textContent = event.title;
-      el('newsText').textContent = event.description;
+      const visible = game.marketRumors().find((row) => row.id === event.id) || event;
+      el('newsTitle').textContent = visible.title;
+      el('newsText').textContent = visible.description;
       return;
     }
     const city = CITIES[game.cityId];
@@ -195,6 +247,7 @@
     renderMarket();
     renderCargo();
     renderRoutes();
+    renderIntel();
     renderEvents();
     renderLog();
     renderGameOver();
@@ -202,6 +255,7 @@
 
   function newGame() {
     game = new Game({ maxDay: 30 });
+    selectedIntelCity = 'busan';
     el('newsTitle').textContent = '시장 정보';
     el('newsText').textContent = '가격뿐 아니라 재고와 수요를 함께 보세요. 같은 도시에서 대량 거래하면 시세가 움직입니다.';
     render();
@@ -212,6 +266,10 @@
   el('upgradeCargoBtn').addEventListener('click', () => {
     const result = safeAction(() => game.upgradeCargo());
     if (result) showToast(`화물칸이 ${result.capacity}칸으로 늘었습니다.`);
+  });
+  el('upgradeIntelBtn').addEventListener('click', () => {
+    const result = safeAction(() => game.upgradeIntel());
+    if (result) showToast(`정보망이 ${result.info.name} Lv.${result.level}로 확장되었습니다.`);
   });
   el('newGameBtn').addEventListener('click', newGame);
   el('restartBtn').addEventListener('click', newGame);
