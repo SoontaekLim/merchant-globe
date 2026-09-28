@@ -11,6 +11,19 @@
   const signedMoney = (n) => `${n >= 0 ? '+' : '-'}${money(Math.abs(n))}`;
   const pct = (n) => `${n >= 0 ? '+' : ''}${Math.round(n)}%`;
 
+  function productNames(ids) {
+    return ids.map((id) => PRODUCTS.find((p) => p.id === id)?.name || id).join('·');
+  }
+
+  function cityProfileText(city) {
+    const producers = Object.keys(city.production || {}).filter((id) => city.production[id] > 1.15);
+    const consumers = Object.keys(city.consumption || {}).filter((id) => city.consumption[id] > 1.15);
+    const parts = [];
+    if (producers.length) parts.push(`생산 ${productNames(producers)}`);
+    if (consumers.length) parts.push(`소비 ${productNames(consumers)}`);
+    return parts.join(' · ');
+  }
+
   function showToast(message, isError = false) {
     const node = el('toast');
     node.textContent = message;
@@ -56,7 +69,8 @@
   function renderMarket() {
     const city = CITIES[game.cityId];
     el('marketCity').textContent = city.name;
-    el('marketSummary').textContent = `${city.summary} · 재고가 줄거나 수요가 오르면 가격 상승 압력이 생깁니다.`;
+    const profile = cityProfileText(city);
+    el('marketSummary').textContent = `${city.summary}${profile ? ` · ${profile}` : ''} · 재고와 수요가 실제 생산·소비 성향에 따라 회복됩니다.`;
     const body = el('marketBody');
     body.innerHTML = '';
 
@@ -65,13 +79,14 @@
       const baseline = product.basePrice * city.modifiers[product.id];
       const deviation = ((info.price / baseline) - 1) * 100;
       const item = game.inventory[product.id];
-      const heldProfitRate = item.qty > 0 ? ((info.price / item.avgCost) - 1) * 100 : null;
+      const heldUnitValue = info.price * game.freshnessMultiplier(product.id);
+      const heldProfitRate = item.qty > 0 ? ((heldUnitValue / item.avgCost) - 1) * 100 : null;
       const stockPct = Math.round(info.stockRatio * 100);
       const demandPct = Math.round(info.demandRatio * 100);
 
       const tr = document.createElement('tr');
       tr.innerHTML = `
-        <td><span class="product-name">${product.name}</span><span class="price-note">기준 ${money(product.basePrice)}</span></td>
+        <td><span class="product-name">${product.name}</span><span class="trait-chip trait-${product.trait}">${product.traitLabel}</span><span class="price-note">기준 ${money(product.basePrice)} · 화물 ${product.cargoSize || 1}칸${product.trait === 'perishable' ? ' · 이동 시 신선도 하락' : ''}</span></td>
         <td class="number"><strong>${money(info.price)}</strong></td>
         <td class="number"><span class="market-chip ${stateClass(info.stockLabel)}">${info.stock}개 · ${info.stockLabel}</span><span class="price-note">평시 ${info.targetStock}개 (${stockPct}%)</span></td>
         <td class="number"><span class="market-chip ${stateClass(info.demandLabel)}">${info.demandLabel}</span><span class="price-note">평시 대비 ${demandPct}%</span></td>
@@ -118,9 +133,12 @@
     }
     list.innerHTML = items.map((p) => {
       const item = game.inventory[p.id];
-      const current = game.price(game.cityId, p.id);
+      const freshness = game.freshnessMultiplier(p.id);
+      const current = game.price(game.cityId, p.id) * freshness;
       const rate = ((current / item.avgCost) - 1) * 100;
-      return `<div class="inventory-row"><span><b>${p.name}</b> × ${item.qty}</span><span>평균 ${money(item.avgCost)} · <span class="${rate >= 0 ? 'positive' : 'negative'}">${pct(rate)}</span></span></div>`;
+      const slots = item.qty * (p.cargoSize || 1);
+      const freshnessText = p.trait === 'perishable' ? ` · 신선도 ${Math.round(freshness * 100)}%` : '';
+      return `<div class="inventory-row"><span><b>${p.name}</b> × ${item.qty}<small>${slots}칸${freshnessText}</small></span><span>평균 ${money(item.avgCost)} · <span class="${rate >= 0 ? 'positive' : 'negative'}">${pct(rate)}</span></span></div>`;
     }).join('');
   }
 
@@ -128,17 +146,22 @@
     const list = el('routeList');
     list.innerHTML = '';
     Object.keys(CITIES).filter((id) => id !== game.cityId).forEach((dest) => {
-      const [cost, days] = ROUTES[game.cityId][dest];
+      const route = game.routeInfo(game.cityId, dest);
       const city = CITIES[dest];
       const button = document.createElement('button');
       button.className = 'route-button';
       button.type = 'button';
       button.disabled = game.gameOver;
-      button.innerHTML = `<strong>${city.name}</strong><span class="route-cost">${money(cost)}</span><span>${days}일 · ${city.country}</span>`;
+      const notice = route.events[0];
+      const changed = route.cost !== route.baseCost || route.days !== route.baseDays;
+      const routeStatus = notice
+        ? `${notice.kind === 'congestion' ? '⚠ 혼잡' : '↗ 순풍'} · ${route.days}일`
+        : `${route.days}일 · 정상`;
+      button.innerHTML = `<strong>${city.name}</strong><span class="route-cost ${changed ? 'route-changed' : ''}">${money(route.cost)}</span><span>${routeStatus} · ${city.country}</span>${notice ? `<small>${notice.description}</small>` : ''}`;
       button.addEventListener('click', () => {
         const result = safeAction(() => game.travel(dest));
         if (result) {
-          showToast(`${city.name} 도착 · ${result.days}일 경과`);
+          showToast(`${city.name} 도착 · ${result.days}일 경과 · 운송비 ${money(result.cost)}`);
           selectedIntelCity = result.from;
           updateNews(result.event);
         }
@@ -197,16 +220,27 @@
 
   function renderEvents() {
     const list = el('eventList');
-    const active = game.marketRumors().slice().reverse();
+    const active = [...game.marketRumors(), ...game.routeNotices()].sort((a, b) => b.createdDay - a.createdDay);
     if (!active.length) {
       list.innerHTML = '<div class="empty-state">현재 특별한 시장 사건이 없습니다.</div>';
       return;
     }
     list.innerHTML = active.slice(0, 6).map((event) => {
-      const effect = event.impact == null ? '정보 불확실' : event.kind === 'demand'
-        ? `수요 +${event.impact}%`
-        : `재고 +${event.impact}개`;
-      const cls = event.impact == null ? 'neutral' : event.kind === 'demand' ? 'positive' : 'market-cool-text';
+      let effect = '정보 불확실';
+      let cls = 'neutral';
+      if (event.type === 'route') {
+        effect = event.kind === 'congestion' ? '운송비 +25% · +1일' : '운송비 -12% · 시간 단축';
+        cls = event.kind === 'congestion' ? 'negative' : 'positive';
+      } else if (event.impact != null && event.kind === 'demand') {
+        effect = `수요 +${event.impact}%`;
+        cls = 'positive';
+      } else if (event.impact != null && event.kind === 'shortage') {
+        effect = `재고 ${event.impact}개`;
+        cls = 'negative';
+      } else if (event.impact != null) {
+        effect = `재고 +${event.impact}개`;
+        cls = 'market-cool-text';
+      }
       const until = event.expiresDay == null ? '' : ` · ${event.expiresDay}일차까지`;
       return `<div class="event-row"><strong>${event.title} <span class="${cls}">${effect}</span></strong><span>${event.description}${until}</span></div>`;
     }).join('');
@@ -219,7 +253,7 @@
 
   function updateNews(event) {
     if (event) {
-      const visible = game.marketRumors().find((row) => row.id === event.id) || event;
+      const visible = event.type === 'route' ? event : (game.marketRumors().find((row) => row.id === event.id) || event);
       el('newsTitle').textContent = visible.title;
       el('newsText').textContent = visible.description;
       return;
@@ -257,7 +291,7 @@
     game = new Game({ maxDay: 30 });
     selectedIntelCity = 'busan';
     el('newsTitle').textContent = '시장 정보';
-    el('newsText').textContent = '가격뿐 아니라 재고와 수요를 함께 보세요. 같은 도시에서 대량 거래하면 시세가 움직입니다.';
+    el('newsText').textContent = '도시 생산·소비, 상품 특성, 항로 상태를 함께 보세요. 같은 가격 차이도 상황에 따라 수익성이 달라집니다.';
     render();
     showToast('새로운 30일 무역을 시작했습니다.');
   }
