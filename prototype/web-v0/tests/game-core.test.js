@@ -105,4 +105,64 @@ test('화물칸 업그레이드는 용량을 5칸 늘린다', () => {
   assert.equal(game.capacity, 25);
 });
 
+
+test('현재 도시는 항상 12개 상품의 실시간 시장 정보를 제공한다', () => {
+  const game = new Game({ seed: 'intel-local' });
+  const intel = game.remoteIntel('seoul');
+  assert.equal(intel.live, true);
+  assert.equal(intel.entries.length, 12);
+  assert.ok(intel.entries.every((entry) => entry.age === 0));
+});
+
+test('방문하지 않은 원격 도시는 정보망 없이 시세를 알 수 없다', () => {
+  const game = new Game({ seed: 'intel-hidden' });
+  const intel = game.remoteIntel('shanghai');
+  assert.equal(game.intelLevel, 0);
+  assert.equal(intel.entries.length, 0);
+});
+
+test('방문한 도시는 마지막 방문 시점의 시세 기록을 남긴다', () => {
+  const game = new Game({ seed: 'intel-visited' });
+  game.cash = 100_000;
+  game.travel('busan');
+  const intel = game.remoteIntel('seoul');
+  assert.equal(intel.live, false);
+  assert.equal(intel.entries.length, 12);
+  assert.ok(intel.entries.every((entry) => entry.age >= 1));
+});
+
+test('정보망 1단계는 원격 도시별 핵심 상품 3개의 정보를 제공한다', () => {
+  const game = new Game({ seed: 'intel-level-one' });
+  game.cash = 100_000;
+  const result = game.upgradeIntel();
+  assert.equal(result.level, 1);
+  const intel = game.remoteIntel('shanghai');
+  assert.equal(intel.entries.length, 3);
+  assert.ok(intel.entries.every((entry) => entry.age === 0));
+});
+
+test('낮은 단계 정보망의 원격 시세는 시간이 지나며 낡고 주기적으로 갱신된다', () => {
+  const game = new Game({ seed: 'intel-stale' });
+  game.cash = 100_000;
+  game.upgradeIntel();
+  const initial = game.remoteIntel('shanghai').entries.map((entry) => entry.capturedDay);
+  game.advanceEconomy(2);
+  const stale = game.remoteIntel('shanghai').entries;
+  assert.ok(stale.every((entry) => entry.age === 2));
+  game.advanceEconomy(1);
+  const refreshed = game.remoteIntel('shanghai').entries;
+  assert.ok(refreshed.every((entry) => entry.age === 0));
+  assert.ok(refreshed.every((entry, i) => entry.capturedDay > initial[i]));
+});
+
+test('정보망이 없으면 원격 시장 사건은 정확한 영향과 종료일이 숨겨진다', () => {
+  const game = new Game({ seed: 'intel-rumor' });
+  const event = game.createEvent();
+  if (event.cityId === game.cityId) event.cityId = 'shanghai';
+  const rumor = game.marketRumors().find((row) => row.id === event.id);
+  assert.equal(rumor.precision, 'rumor');
+  assert.equal(rumor.impact, null);
+  assert.equal(rumor.expiresDay, null);
+});
+
 console.log('\nAll Merchant Globe core tests passed.');
