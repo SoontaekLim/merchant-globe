@@ -2,7 +2,12 @@
   'use strict';
 
   const { Game, PRODUCTS, CITIES, ROUTES, INTEL_LEVELS } = window.MerchantGlobeCore;
-  let game = new Game({ maxDay: 30 });
+  const SaveSystem = window.MerchantGlobeSave;
+  const SAVE_KEY = 'merchant-globe.mvp.save.v1';
+
+  let gameSeed = Date.now();
+  let actionHistory = [];
+  let game = new Game({ maxDay: 30, seed: gameSeed });
   let selectedIntelCity = 'busan';
   let toastTimer = null;
 
@@ -30,6 +35,70 @@
     node.className = `toast show${isError ? ' error' : ''}`;
     clearTimeout(toastTimer);
     toastTimer = setTimeout(() => { node.className = 'toast'; node.textContent = ''; }, 2600);
+  }
+
+  function updateSaveStatus(hasSave) {
+    const node = el('saveStatus');
+    if (!node) return;
+    node.textContent = hasSave ? `저장됨 · Day ${game.day}` : '저장 없음';
+  }
+
+  function saveGame(showMessage = false) {
+    try {
+      const payload = SaveSystem.createSavePayload({
+        seed: gameSeed,
+        maxDay: game.maxDay,
+        selectedIntelCity,
+        actions: actionHistory
+      });
+      localStorage.setItem(SAVE_KEY, JSON.stringify(payload));
+      updateSaveStatus(true);
+      if (showMessage) showToast(`Day ${game.day} 진행을 저장했습니다.`);
+      return true;
+    } catch (error) {
+      updateSaveStatus(false);
+      if (showMessage) showToast(error.message || '저장하지 못했습니다.', true);
+      return false;
+    }
+  }
+
+  function recordAction(action) {
+    actionHistory.push(JSON.parse(JSON.stringify(action)));
+    saveGame(false);
+  }
+
+  function loadSavedGame() {
+    try {
+      const raw = localStorage.getItem(SAVE_KEY);
+      if (!raw) {
+        updateSaveStatus(false);
+        return false;
+      }
+
+      const restored = SaveSystem.restoreGame(JSON.parse(raw), Game);
+      game = restored.game;
+      gameSeed = restored.seed;
+      actionHistory = restored.actions;
+      selectedIntelCity = CITIES[restored.selectedIntelCity] ? restored.selectedIntelCity : 'busan';
+      updateSaveStatus(true);
+      return true;
+    } catch (error) {
+      console.warn('Merchant Globe save restore failed:', error);
+      try { localStorage.removeItem(SAVE_KEY); } catch (_) { /* ignore storage cleanup errors */ }
+      updateSaveStatus(false);
+      showToast('저장 데이터가 손상되었거나 현재 버전과 맞지 않아 새 게임으로 시작합니다.', true);
+      return false;
+    }
+  }
+
+  function deleteSavedGame() {
+    try {
+      localStorage.removeItem(SAVE_KEY);
+      updateSaveStatus(false);
+      showToast('저장 데이터를 삭제했습니다. 다음 거래부터 다시 자동저장됩니다.');
+    } catch (error) {
+      showToast('저장 데이터를 삭제하지 못했습니다.', true);
+    }
   }
 
   function safeAction(fn) {
@@ -100,18 +169,20 @@
         const q = tradeQuantity();
         const result = safeAction(() => game.buy(product.id, q));
         if (result) {
+          recordAction({ type: 'buy', productId: product.id, qty: q });
           showToast(`${product.name} ${q}개 매입 · 평균 체결 ${money(result.unitPrice)} · 다음 시세 ${money(result.nextPrice)}`);
           el('newsTitle').textContent = `${product.name} 재고 감소`;
-          el('newsText').textContent = `대량 매입은 현지 재고를 줄여 같은 도시의 다음 거래 가격을 올릴 수 있습니다.`;
+          el('newsText').textContent = '대량 매입은 현지 재고를 줄여 같은 도시의 다음 거래 가격을 올릴 수 있습니다.';
         }
       });
       tr.querySelector('.sell-button').addEventListener('click', () => {
         const q = tradeQuantity();
         const result = safeAction(() => game.sell(product.id, q));
         if (result) {
+          recordAction({ type: 'sell', productId: product.id, qty: q });
           showToast(`${product.name} 평균 체결 ${money(result.unitPrice)} · 손익 ${signedMoney(result.profit)} · 다음 시세 ${money(result.nextPrice)}`);
           el('newsTitle').textContent = `${product.name} 재고 증가`;
-          el('newsText').textContent = `판매한 물량이 현지 시장에 공급되어 재고가 늘고 가격 하락 압력이 생겼습니다.`;
+          el('newsText').textContent = '판매한 물량이 현지 시장에 공급되어 재고가 늘고 가격 하락 압력이 생겼습니다.';
         }
       });
       body.appendChild(tr);
@@ -161,8 +232,9 @@
       button.addEventListener('click', () => {
         const result = safeAction(() => game.travel(dest));
         if (result) {
-          showToast(`${city.name} 도착 · ${result.days}일 경과 · 운송비 ${money(result.cost)}`);
           selectedIntelCity = result.from;
+          recordAction({ type: 'travel', destinationId: dest });
+          showToast(`${city.name} 도착 · ${result.days}일 경과 · 운송비 ${money(result.cost)}`);
           updateNews(result.event);
         }
       });
@@ -188,7 +260,11 @@
       button.type = 'button';
       button.className = `intel-city-button${city.id === selectedIntelCity ? ' active' : ''}${city.id === game.cityId ? ' current' : ''}`;
       button.innerHTML = `<strong>${city.name}</strong><span>${city.id === game.cityId ? '현재 · 실시간' : '원격'}</span>`;
-      button.addEventListener('click', () => { selectedIntelCity = city.id; renderIntel(); });
+      button.addEventListener('click', () => {
+        selectedIntelCity = city.id;
+        renderIntel();
+        saveGame(false);
+      });
       tabs.appendChild(button);
     });
 
@@ -287,11 +363,18 @@
     renderGameOver();
   }
 
-  function newGame() {
-    game = new Game({ maxDay: 30 });
+  function newGame(skipConfirm = false) {
+    let hasSave = false;
+    try { hasSave = Boolean(localStorage.getItem(SAVE_KEY)); } catch (_) { /* ignore */ }
+    if (!skipConfirm && hasSave && !window.confirm('현재 저장을 덮어쓰고 새 게임을 시작할까요?')) return;
+
+    gameSeed = Date.now();
+    actionHistory = [];
+    game = new Game({ maxDay: 30, seed: gameSeed });
     selectedIntelCity = 'busan';
     el('newsTitle').textContent = '시장 정보';
     el('newsText').textContent = '도시 생산·소비, 상품 특성, 항로 상태를 함께 보세요. 같은 가격 차이도 상황에 따라 수익성이 달라집니다.';
+    saveGame(false);
     render();
     showToast('새로운 30일 무역을 시작했습니다.');
   }
@@ -299,14 +382,30 @@
   el('tradeQty').addEventListener('change', tradeQuantity);
   el('upgradeCargoBtn').addEventListener('click', () => {
     const result = safeAction(() => game.upgradeCargo());
-    if (result) showToast(`화물칸이 ${result.capacity}칸으로 늘었습니다.`);
+    if (result) {
+      recordAction({ type: 'upgradeCargo' });
+      showToast(`화물칸이 ${result.capacity}칸으로 늘었습니다.`);
+    }
   });
   el('upgradeIntelBtn').addEventListener('click', () => {
     const result = safeAction(() => game.upgradeIntel());
-    if (result) showToast(`정보망이 ${result.info.name} Lv.${result.level}로 확장되었습니다.`);
+    if (result) {
+      recordAction({ type: 'upgradeIntel' });
+      showToast(`정보망이 ${result.info.name} Lv.${result.level}로 확장되었습니다.`);
+    }
   });
-  el('newGameBtn').addEventListener('click', newGame);
-  el('restartBtn').addEventListener('click', newGame);
+  el('saveGameBtn').addEventListener('click', () => saveGame(true));
+  el('deleteSaveBtn').addEventListener('click', deleteSavedGame);
+  el('newGameBtn').addEventListener('click', () => newGame(false));
+  el('restartBtn').addEventListener('click', () => newGame(true));
 
+  const restored = loadSavedGame();
+  if (!restored) saveGame(false);
   render();
+
+  if (restored) {
+    el('newsTitle').textContent = `${CITIES[game.cityId].name}에서 이어하기`;
+    el('newsText').textContent = `Day ${game.day} 저장 상태를 복원했습니다. 시장·이벤트·난수 흐름도 저장 시점과 동일하게 이어집니다.`;
+    showToast(`저장된 Day ${game.day} 게임을 불러왔습니다.`);
+  }
 })();
