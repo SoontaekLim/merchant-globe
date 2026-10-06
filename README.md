@@ -60,7 +60,8 @@ merchant-globe/
 - 상품별 적재 크기와 신선도
 - 축제·유행·증산·공급 차질 이벤트
 - 항로 혼잡·순풍에 따른 운송비/시간 변화
-- 경제 엔진 자동 테스트
+- 브라우저 로컬 자동저장 / 이어하기
+- 결정적 저장 복원 테스트를 포함한 경제 엔진 자동 테스트
 
 실행 방법과 상세 내용은 [`prototype/web-v0/README.md`](prototype/web-v0/README.md)를 참고하세요.
 
@@ -72,7 +73,7 @@ merchant-globe/
 CI는 현재 다음을 확인합니다.
 
 - `game-core.js`, `app.js` JavaScript 문법 검사
-- 경제/시장 정보 자동 테스트
+- 경제/시장 정보 및 저장 복원 자동 테스트
 - `server.py` Python 문법 검사
 - 개발 서버 실행 후 `/api/health` 응답 검증
 - 루트 웹 페이지가 정상 제공되는지 스모크 테스트
