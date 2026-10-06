@@ -4,6 +4,6 @@
   "private": true,
   "scripts": {
     "dev": "python3 server.py",
-    "test": "node tests/game-core.test.js"
+    "test": "node tests/game-core.test.js && node tests/save-system.test.js"
   }
 }
