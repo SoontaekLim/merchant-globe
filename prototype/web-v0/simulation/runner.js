@@ -150,13 +150,42 @@ function mergeNumericMaps(results, field) {
   return merged;
 }
 
+function routePairKey(route) {
+  const [from, to] = String(route).split('->');
+  if (!from || !to) return String(route);
+  return [from, to].sort().join('<->');
+}
+
+function aggregateRoutePairs(routeCounts) {
+  const pairs = {};
+  for (const [route, count] of Object.entries(routeCounts)) {
+    const key = routePairKey(route);
+    pairs[key] = (pairs[key] || 0) + count;
+  }
+  return pairs;
+}
+
+function productWinCounts(results) {
+  const counts = {};
+  for (const result of results) {
+    const winner = Object.entries(result.productProfit || {})
+      .filter(([, profit]) => profit > 0)
+      .sort((a, b) => b[1] - a[1])[0];
+    if (!winner) continue;
+    counts[winner[0]] = (counts[winner[0]] || 0) + 1;
+  }
+  return counts;
+}
+
 function summarize(botName, results) {
   const assets = results.map((row) => row.finalAssets);
   const completed = results.filter((row) => row.completed).length;
   const productProfit = mergeNumericMaps(results, 'productProfit');
   const productSold = mergeNumericMaps(results, 'productSold');
   const routeCounts = mergeNumericMaps(results, 'routeCounts');
+  const routePairCounts = aggregateRoutePairs(routeCounts);
   const cityVisits = mergeNumericMaps(results, 'cityVisits');
+  const productWins = productWinCounts(results);
   const stopReasons = {};
   results.forEach((row) => {
     if (!row.completed) {
@@ -173,14 +202,20 @@ function summarize(botName, results) {
 
   const topProduct = Object.entries(positiveProductProfit).sort((a, b) => b[1] - a[1])[0] || [null, 0];
   const topRoute = Object.entries(routeCounts).sort((a, b) => b[1] - a[1])[0] || [null, 0];
+  const topRoutePair = Object.entries(routePairCounts).sort((a, b) => b[1] - a[1])[0] || [null, 0];
+  const topWinningProduct = Object.entries(productWins).sort((a, b) => b[1] - a[1])[0] || [null, 0];
 
   const warnings = [];
   const topProductShare = positiveProfitTotal > 0 ? topProduct[1] / positiveProfitTotal : 0;
   const topRouteShare = routeTotal > 0 ? topRoute[1] / routeTotal : 0;
+  const topRoutePairShare = routeTotal > 0 ? topRoutePair[1] / routeTotal : 0;
+  const topWinningProductShare = results.length > 0 ? topWinningProduct[1] / results.length : 0;
   const completionRate = results.length ? completed / results.length : 0;
 
   if (topProductShare >= 0.35) warnings.push(`상품 수익 집중: ${topProduct[0]} ${Math.round(topProductShare * 100)}%`);
-  if (topRouteShare >= 0.30) warnings.push(`항로 이용 집중: ${topRoute[0]} ${Math.round(topRouteShare * 100)}%`);
+  if (topWinningProductShare >= 0.50) warnings.push(`seed별 최고 수익 상품 편중: ${topWinningProduct[0]} ${Math.round(topWinningProductShare * 100)}%`);
+  if (topRouteShare >= 0.30) warnings.push(`단방향 항로 집중: ${topRoute[0]} ${Math.round(topRouteShare * 100)}%`);
+  if (topRoutePairShare >= 0.35) warnings.push(`왕복 항로 집중: ${topRoutePair[0]} ${Math.round(topRoutePairShare * 100)}%`);
   if (completionRate < 0.95) warnings.push(`완주율 낮음: ${Math.round(completionRate * 100)}%`);
   if (median(assets) <= STARTING_CASH) warnings.push('중앙 최종 자산이 시작 자산 이하');
 
@@ -201,10 +236,14 @@ function summarize(botName, results) {
     stopReasons,
     productProfit,
     productSold,
+    productWins,
     routeCounts,
+    routePairCounts,
     cityVisits,
     topProduct: { productId: topProduct[0], share: topProductShare },
+    topWinningProduct: { productId: topWinningProduct[0], wins: topWinningProduct[1], share: topWinningProductShare },
     topRoute: { route: topRoute[0], share: topRouteShare },
+    topRoutePair: { routePair: topRoutePair[0], share: topRoutePairShare },
     warnings
   };
 }
@@ -238,12 +277,34 @@ function printSummary(summary) {
   console.log('\n상품별 상위 실현손익');
   console.table(products);
 
+  const productWins = Object.entries(summary.productWins)
+    .map(([id, wins]) => ({
+      상품: PRODUCTS.find((product) => product.id === id)?.name || id,
+      '1위 횟수': wins,
+      '1위 비율': `${Math.round((wins / Math.max(1, summary.runs)) * 100)}%`
+    }))
+    .sort((a, b) => b['1위 횟수'] - a['1위 횟수'])
+    .slice(0, 6);
+  console.log('seed별 최고 수익 상품');
+  console.table(productWins);
+
   const routes = Object.entries(summary.routeCounts)
     .map(([route, count]) => ({ 항로: route, 이용횟수: count }))
     .sort((a, b) => b.이용횟수 - a.이용횟수)
     .slice(0, 6);
-  console.log('항로 사용 상위');
+  console.log('단방향 항로 사용 상위');
   console.table(routes);
+
+  const routePairs = Object.entries(summary.routePairCounts)
+    .map(([routePair, count]) => ({
+      왕복항로: routePair,
+      이용횟수: count,
+      비율: `${Math.round((count / Math.max(1, Object.values(summary.routeCounts).reduce((sum, value) => sum + value, 0))) * 100)}%`
+    }))
+    .sort((a, b) => b.이용횟수 - a.이용횟수)
+    .slice(0, 6);
+  console.log('왕복 항로 사용 상위');
+  console.table(routePairs);
 
   if (summary.warnings.length) {
     console.log('밸런스 경고');
@@ -318,6 +379,9 @@ module.exports = {
   createBot,
   executeAction,
   runSimulation,
+  routePairKey,
+  aggregateRoutePairs,
+  productWinCounts,
   summarize,
   runBatch
 };
