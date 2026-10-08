@@ -62,7 +62,7 @@ jobs:
         run: npm test
 
       - name: Run quick balance simulation
-        run: npm run simulate:quick -- --quiet
+        run: npm run simulate:quick
 
       - name: Check Python server syntax
         run: python -m py_compile server.py
