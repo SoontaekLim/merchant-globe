@@ -14,7 +14,12 @@
         <p class="eyebrow">TRADE SIMULATION MVP</p>
         <h1>Merchant Globe</h1>
       </div>
-      <button id="newGameBtn" class="secondary-button" type="button">새 게임</button>
+      <div style="display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap;">
+        <span id="saveStatus" class="muted">저장 없음</span>
+        <button id="saveGameBtn" class="secondary-button" type="button">저장</button>
+        <button id="deleteSaveBtn" class="secondary-button" type="button">저장 삭제</button>
+        <button id="newGameBtn" class="secondary-button" type="button">새 게임</button>
+      </div>
     </header>
 
     <main>
@@ -99,7 +104,6 @@
         </aside>
       </div>
 
-
       <section class="panel intel-panel">
         <div class="panel-heading intel-heading">
           <div>
@@ -157,6 +161,7 @@
   </div>
 
   <script src="game-core.js"></script>
+  <script src="save-system.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
