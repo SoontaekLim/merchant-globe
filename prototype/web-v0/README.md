@@ -111,17 +111,28 @@
 
 시장 이벤트는 가격을 직접 수정하지 않고 실제 재고와 수요를 변화시킵니다.
 
-## 실행
+## Windows 프로토타입 환경
 
-```bash
-cd prototype/web-v0
-python3 server.py
+현재 프로토타입의 기준 개발/수동 테스트 환경은 **Windows + PowerShell**입니다.
+
+권장 버전:
+
+- Node.js 22
+- Python 3.12
+
+프로젝트 루트에서:
+
+```powershell
+cd prototype\web-v0
+npm run dev
 ```
 
-기본 바인딩 주소는 `127.0.0.1`입니다. 다른 장치에서도 접속할 수 있게 바인딩 주소를 지정하려면:
+`npm run dev`는 내부적으로 `python server.py`를 실행합니다.
 
-```bash
-python3 server.py --host 0.0.0.0
+기본 바인딩 주소는 `127.0.0.1`입니다. 같은 네트워크의 다른 장치에서도 접속할 수 있게 하려면:
+
+```powershell
+npm run dev -- --host 0.0.0.0
 ```
 
 브라우저:
@@ -132,9 +143,12 @@ http://127.0.0.1:8000
 
 ## 테스트
 
-```bash
-cd prototype/web-v0
+PowerShell에서:
+
+```powershell
+cd prototype\web-v0
 npm test
+npm run simulate:quick
 ```
 
 현재 테스트에는 경제 코어 24개, 저장/복원 4개, 시뮬레이터 5개가 포함됩니다.
@@ -178,6 +192,8 @@ npm run simulate -- --runs 1000 --bot all --output simulation/report.json
 리포트에는 평균/중앙 최종 자산, P10/P90, 실현손익, 운송비, 상품별 수익, 항로 이용 횟수, 완주율이 포함됩니다. 특정 상품의 양의 실현손익 비중이 35% 이상이거나 특정 항로가 전체 이동의 30% 이상이면 밸런스 경고를 표시합니다.
 
 별도 npm 의존성 설치는 필요하지 않습니다.
+
+GitHub Actions도 Windows GitHub-hosted runner를 기본 검증 환경으로 사용합니다. Linux 검증은 Actions의 수동 실행에서 `runner: linux`, 로컬 Windows self-hosted 검증은 `runner: local`로 선택할 수 있습니다.
 
 ## 다음 개발 후보
 
