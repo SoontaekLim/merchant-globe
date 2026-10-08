@@ -92,11 +92,15 @@ function runSimulation(options = {}) {
       collectEvents();
     } catch (error) {
       actionErrors += 1;
+      if (typeof bot.onActionError === 'function') {
+        bot.onActionError(action, error, observation);
+      } else if (action.type === 'buy' && bot.pendingDestination) {
+        bot.pendingDestination = null;
+      }
       if (actionErrors >= 20) {
         stopReason = `too-many-action-errors: ${error.message}`;
         break;
       }
-      if (action.type === 'buy' && bot.pendingDestination) bot.pendingDestination = null;
     }
   }
 
