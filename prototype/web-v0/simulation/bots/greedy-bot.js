@@ -4,6 +4,7 @@ class GreedyBot {
   constructor() {
     this.name = 'greedy';
     this.pendingDestination = null;
+    this.pendingProductId = null;
     this.pendingTradeKey = null;
     this.visited = new Set();
     this.failedTrades = new Set();
@@ -14,6 +15,7 @@ class GreedyBot {
       this.failedTrades.add(this.pendingTradeKey);
     }
     this.pendingDestination = null;
+    this.pendingProductId = null;
     this.pendingTradeKey = null;
   }
 
@@ -27,9 +29,11 @@ class GreedyBot {
       const route = observation.routes[this.pendingDestination];
       if (route && observation.cash >= route.cost) {
         const destinationId = this.pendingDestination;
+        const productId = this.pendingProductId;
         this.pendingDestination = null;
+        this.pendingProductId = null;
         this.pendingTradeKey = null;
-        return { type: 'travel', destinationId };
+        return { type: 'travel', destinationId, intent: 'trade', productId };
       }
       this.pendingDestination = null;
     }
@@ -82,23 +86,36 @@ class GreedyBot {
     const best = opportunities[0];
     if (best && best.expectedProfit > 0) {
       this.pendingDestination = best.destinationId;
+      this.pendingProductId = best.productId;
       this.pendingTradeKey = best.tradeKey;
       return { type: 'buy', productId: best.productId, quantity: best.qty };
     }
 
     const routes = Object.values(observation.routes)
       .filter((route) => observation.cash >= route.cost)
+      .map((route) => {
+        const remote = observation.remoteMarkets[route.destinationId];
+        const ages = remote && remote.entries.length ? remote.entries.map((entry) => entry.age || 0) : [];
+        const oldestIntelAge = ages.length ? Math.max(...ages) : Infinity;
+        return { ...route, oldestIntelAge };
+      })
       .sort((a, b) => {
         const aUnknown = this.visited.has(a.destinationId) ? 1 : 0;
         const bUnknown = this.visited.has(b.destinationId) ? 1 : 0;
         if (aUnknown !== bUnknown) return aUnknown - bUnknown;
+        if (a.oldestIntelAge !== b.oldestIntelAge) return b.oldestIntelAge - a.oldestIntelAge;
         const aEfficiency = a.cost + a.days * 180;
         const bEfficiency = b.cost + b.days * 180;
         return aEfficiency - bEfficiency;
       });
 
     if (routes.length) {
-      return { type: 'travel', destinationId: routes[0].destinationId };
+      const route = routes[0];
+      return {
+        type: 'travel',
+        destinationId: route.destinationId,
+        intent: this.visited.has(route.destinationId) ? 'reposition' : 'explore'
+      };
     }
 
     return { type: 'stop', reason: 'no-affordable-route' };
