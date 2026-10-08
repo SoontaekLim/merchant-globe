@@ -1,14 +1,19 @@
 const assert = require('node:assert/strict');
 const { Game, CITIES } = require('../game-core.js');
 
-test('부산-후쿠오카 인삼의 구조적 가격차는 완화된 0.4 밸런스를 사용한다', () => {
+test('인삼의 지역 정체성은 유지하되 도시 간 가격 극단은 완화한다', () => {
+  assert.equal(CITIES.seoul.modifiers.ginseng, 0.80);
+  assert.equal(CITIES.seoul.production.ginseng, 1.25);
   assert.equal(CITIES.busan.modifiers.ginseng, 0.94);
   assert.equal(CITIES.fukuoka.modifiers.ginseng, 1.22);
   assert.equal(CITIES.fukuoka.consumption.ginseng, 1.22);
+  assert.equal(CITIES.osaka.modifiers.ginseng, 1.22);
+  assert.equal(CITIES.osaka.consumption.ginseng, 1.28);
+  assert.equal(CITIES.shanghai.modifiers.ginseng, 1.18);
 
-  const busanBase = 1900 * CITIES.busan.modifiers.ginseng;
-  const fukuokaBase = 1900 * CITIES.fukuoka.modifiers.ginseng;
-  assert.ok(fukuokaBase - busanBase < 600);
+  const lowestBase = 1900 * CITIES.seoul.modifiers.ginseng;
+  const highestBase = 1900 * CITIES.osaka.modifiers.ginseng;
+  assert.ok(highestBase - lowestBase < 850);
 });
 
 function test(name, fn) {
