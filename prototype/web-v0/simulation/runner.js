@@ -153,6 +153,13 @@ function summarize(botName, results) {
   const productSold = mergeNumericMaps(results, 'productSold');
   const routeCounts = mergeNumericMaps(results, 'routeCounts');
   const cityVisits = mergeNumericMaps(results, 'cityVisits');
+  const stopReasons = {};
+  results.forEach((row) => {
+    if (!row.completed) {
+      const reason = row.stopReason || 'unknown';
+      stopReasons[reason] = (stopReasons[reason] || 0) + 1;
+    }
+  });
 
   const positiveProductProfit = Object.fromEntries(
     Object.entries(productProfit).map(([key, value]) => [key, Math.max(0, value)])
@@ -186,6 +193,8 @@ function summarize(botName, results) {
     averageTransportCost: results.reduce((sum, row) => sum + row.stats.transportCost, 0) / Math.max(1, results.length),
     averageTrips: results.reduce((sum, row) => sum + row.stats.trips, 0) / Math.max(1, results.length),
     averageActions: results.reduce((sum, row) => sum + row.actions, 0) / Math.max(1, results.length),
+    averageActionErrors: results.reduce((sum, row) => sum + row.actionErrors, 0) / Math.max(1, results.length),
+    stopReasons,
     productProfit,
     productSold,
     routeCounts,
@@ -209,6 +218,10 @@ function printSummary(summary) {
   console.log(`평균 실현손익  ${money(summary.averageRealizedProfit)}`);
   console.log(`평균 운송비    ${money(summary.averageTransportCost)}`);
   console.log(`평균 이동횟수  ${summary.averageTrips.toFixed(1)}`);
+  console.log(`평균 액션오류  ${summary.averageActionErrors.toFixed(1)}`);
+  if (Object.keys(summary.stopReasons).length) {
+    console.log(`중간 종료 사유  ${JSON.stringify(summary.stopReasons)}`);
+  }
 
   const products = Object.entries(summary.productProfit)
     .map(([id, profit]) => ({
