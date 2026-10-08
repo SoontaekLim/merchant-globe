@@ -2,7 +2,7 @@ name: CI
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, labeled, unlabeled]
+    types: [opened, synchronize, reopened]
   push:
     branches:
       - main
@@ -11,11 +11,12 @@ on:
       runner:
         description: Runner to use
         required: true
-        default: local
+        default: windows
         type: choice
         options:
+          - windows
+          - linux
           - local
-          - github
 
 permissions:
   contents: read
@@ -23,7 +24,7 @@ permissions:
 jobs:
   prototype:
     name: Prototype checks
-    runs-on: ${{ fromJSON((((github.event_name == 'workflow_dispatch' && inputs.runner == 'github') || (github.event_name == 'pull_request' && (github.event.pull_request.head.repo.full_name != github.repository || contains(github.event.pull_request.labels.*.name, 'ci:github-hosted')))) && '["ubuntu-latest"]') || '["self-hosted","merchant-globe"]') }}
+    runs-on: ${{ fromJSON((github.event_name == 'workflow_dispatch' && inputs.runner == 'local' && '["self-hosted","merchant-globe"]') || (github.event_name == 'workflow_dispatch' && inputs.runner == 'linux' && '["ubuntu-latest"]') || '["windows-latest"]') }}
     timeout-minutes: 15
 
     defaults:
@@ -46,10 +47,7 @@ jobs:
 
       - name: Show runner environment
         run: |
-          echo "Runner: $RUNNER_NAME"
-          echo "OS: $RUNNER_OS"
-          echo "Arch: $RUNNER_ARCH"
-          echo "Event: $GITHUB_EVENT_NAME"
+          python -c "import os, platform; print('Runner:', os.getenv('RUNNER_NAME')); print('OS:', os.getenv('RUNNER_OS')); print('Arch:', os.getenv('RUNNER_ARCH')); print('Platform:', platform.platform())"
           node --version
           python --version
 
