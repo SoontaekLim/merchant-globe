@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const { Game } = require('../game-core.js');
 const { buildObservation } = require('../simulation/observation.js');
 const { GreedyBot } = require('../simulation/bots/greedy-bot.js');
-const { runSimulation, summarize } = require('../simulation/runner.js');
+const { runSimulation, routePairKey, aggregateRoutePairs, productWinCounts, summarize } = require('../simulation/runner.js');
 
 function test(name, fn) {
   try {
@@ -90,6 +90,33 @@ test('RandomBot도 headless 게임을 실행할 수 있다', () => {
   assert.ok(result.stats.trips >= 0);
 });
 
+test('양방향 항로는 하나의 왕복 항로로 합산된다', () => {
+  assert.equal(routePairKey('busan->fukuoka'), 'busan<->fukuoka');
+  assert.equal(routePairKey('fukuoka->busan'), 'busan<->fukuoka');
+  assert.deepEqual(
+    aggregateRoutePairs({
+      'busan->fukuoka': 30,
+      'fukuoka->busan': 25,
+      'seoul->busan': 10
+    }),
+    {
+      'busan<->fukuoka': 55,
+      'busan<->seoul': 10
+    }
+  );
+});
+
+test('각 seed에서 가장 높은 양의 실현손익 상품을 집계한다', () => {
+  const counts = productWinCounts([
+    { productProfit: { ginseng: 100, silk: 20 } },
+    { productProfit: { ginseng: 30, silk: 80 } },
+    { productProfit: { ginseng: 40, silk: -10 } },
+    { productProfit: { ginseng: -5, silk: -3 } }
+  ]);
+
+  assert.deepEqual(counts, { ginseng: 2, silk: 1 });
+});
+
 test('시뮬레이션 요약은 상품/항로 집중도와 완주율을 계산한다', () => {
   const results = [
     runSimulation({ bot: 'greedy', seed: 'summary-0' }),
@@ -102,7 +129,11 @@ test('시뮬레이션 요약은 상품/항로 집중도와 완주율을 계산�
   assert.ok(summary.completionRate >= 0 && summary.completionRate <= 1);
   assert.ok(Number.isFinite(summary.averageFinalAssets));
   assert.ok(summary.topProduct);
+  assert.ok(summary.topWinningProduct);
   assert.ok(summary.topRoute);
+  assert.ok(summary.topRoutePair);
+  assert.ok(summary.routePairCounts);
+  assert.ok(summary.productWins);
   assert.ok(Array.isArray(summary.warnings));
 });
 
