@@ -4,7 +4,17 @@ class GreedyBot {
   constructor() {
     this.name = 'greedy';
     this.pendingDestination = null;
+    this.pendingTradeKey = null;
     this.visited = new Set();
+    this.failedTrades = new Set();
+  }
+
+  onActionError(action) {
+    if (action && action.type === 'buy' && this.pendingTradeKey) {
+      this.failedTrades.add(this.pendingTradeKey);
+    }
+    this.pendingDestination = null;
+    this.pendingTradeKey = null;
   }
 
   decide(observation) {
@@ -18,6 +28,7 @@ class GreedyBot {
       if (route && observation.cash >= route.cost) {
         const destinationId = this.pendingDestination;
         this.pendingDestination = null;
+        this.pendingTradeKey = null;
         return { type: 'travel', destinationId };
       }
       this.pendingDestination = null;
@@ -32,12 +43,15 @@ class GreedyBot {
     for (const local of observation.localMarket) {
       const cargoSize = Math.max(1, local.cargoSize);
       const maxByCargo = Math.floor(observation.cargoFree / cargoSize);
-      const buyUnitEstimate = local.price * 1.02;
+      const buyUnitEstimate = local.price * 1.25;
       for (const [destinationId, remote] of Object.entries(observation.remoteMarkets)) {
         const route = observation.routes[destinationId];
         if (!route || observation.cash <= route.cost) continue;
         const entry = remote.entries.find((row) => row.productId === local.productId);
         if (!entry) continue;
+
+        const tradeKey = `${observation.day}:${observation.cityId}:${destinationId}:${local.productId}`;
+        if (this.failedTrades.has(tradeKey)) continue;
 
         const maxByCash = Math.floor((observation.cash - route.cost) / Math.max(1, buyUnitEstimate));
         const maxQty = Math.min(local.stock, maxByCargo, maxByCash);
@@ -58,7 +72,8 @@ class GreedyBot {
           destinationId,
           qty,
           expectedProfit,
-          score
+          score,
+          tradeKey
         });
       }
     }
@@ -67,6 +82,7 @@ class GreedyBot {
     const best = opportunities[0];
     if (best && best.expectedProfit > 0) {
       this.pendingDestination = best.destinationId;
+      this.pendingTradeKey = best.tradeKey;
       return { type: 'buy', productId: best.productId, quantity: best.qty };
     }
 
