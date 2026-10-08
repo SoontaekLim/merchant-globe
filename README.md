@@ -10,7 +10,7 @@ Merchant Globe는 실제 세계의 도시와 지리를 기반으로 하는 무�
 
 > 도시별 가격 차이와 시장 변동만으로 무역이 재미있는가?
 
-현재 실행 가능한 프로토타입은 `prototype/web-v0`에 있습니다.
+현재 실행 가능한 프로토타입은 `prototype/web-v0`에 있으며, 기준 개발/수동 테스트 환경은 **Windows + PowerShell**입니다.
 
 ## 핵심 루프
 
@@ -68,19 +68,21 @@ merchant-globe/
 
 ## 개발 검증
 
-모든 Pull Request와 `main` 브랜치 push에서 GitHub Actions CI가 자동 실행됩니다. 내부 개발은 `self-hosted` + `merchant-globe` 러너를 기본으로 사용하고, 외부 fork PR은 GitHub-hosted 러너에서 실행합니다. 로컬 러너를 사용할 수 없을 때는 PR에 `ci:github-hosted` 레이블을 붙이거나 Actions의 수동 실행에서 `runner: github`를 선택할 수 있습니다.
+모든 Pull Request와 `main` 브랜치 push에서 GitHub Actions CI가 자동 실행됩니다. 프로토타입 기준 환경에 맞춰 기본 CI는 **GitHub-hosted Windows runner**에서 실행합니다. 필요할 때 Actions 수동 실행에서 `runner: linux`로 Linux 호환성을 확인하거나, `runner: local`로 `self-hosted` + `merchant-globe` Windows 러너를 사용할 수 있습니다.
 
 CI는 현재 다음을 확인합니다.
 
 - `game-core.js`, `app.js` JavaScript 문법 검사
-- 경제/시장 정보 및 저장 복원 자동 테스트
+- 경제/시장 정보/저장 복원/시뮬레이터 자동 테스트
+- RandomBot / GreedyBot 빠른 밸런스 시뮬레이션
 - `server.py` Python 문법 검사
 - 개발 서버 실행 후 `/api/health` 응답 검증
 - 루트 웹 페이지가 정상 제공되는지 스모크 테스트
 
 로컬에서는 다음 명령으로 핵심 테스트를 실행할 수 있습니다.
 
-```bash
-cd prototype/web-v0
+```powershell
+cd prototype\web-v0
 npm test
+npm run simulate:quick
 ```
