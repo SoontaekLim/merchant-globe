@@ -56,7 +56,7 @@ test('GreedyBot은 매입 후 예약한 목적지로 이동한 뒤 판매한다'
     inventory: [{ productId: 'rice', qty: 10, avgCost: 100, freshness: 1, cargoSize: 1 }]
   };
   const travel = bot.decide(afterBuy);
-  assert.deepEqual(travel, { type: 'travel', destinationId: 'busan' });
+  assert.deepEqual(travel, { type: 'travel', destinationId: 'busan', intent: 'trade', productId: 'rice' });
 
   const arrived = {
     ...base,
@@ -117,6 +117,35 @@ test('각 seed에서 가장 높은 양의 실현손익 상품을 집계한다', 
   assert.deepEqual(counts, { ginseng: 2, silk: 1 });
 });
 
+test('거래 항로 집중도는 탐색/재배치 이동을 제외한다', () => {
+  const summary = summarize('greedy', [
+    {
+      completed: true,
+      stopReason: null,
+      finalAssets: 12000,
+      actionErrors: 0,
+      actions: 4,
+      stats: { realizedProfit: 2000, transportCost: 500, trips: 3 },
+      productProfit: { ginseng: 2000 },
+      productSold: { ginseng: 2 },
+      routeCounts: {
+        'busan->fukuoka': 1,
+        'fukuoka->busan': 1,
+        'busan->seoul': 1
+      },
+      tradeRouteCounts: {
+        'busan->fukuoka': 1
+      },
+      cityVisits: { seoul: 1, busan: 2, fukuoka: 1 }
+    }
+  ]);
+
+  assert.deepEqual(summary.tradeRouteCounts, { 'busan->fukuoka': 1 });
+  assert.deepEqual(summary.tradeRoutePairCounts, { 'busan<->fukuoka': 1 });
+  assert.equal(summary.topRoutePair.routePair, 'busan<->fukuoka');
+  assert.equal(summary.topRoutePair.share, 1);
+});
+
 test('시뮬레이션 요약은 상품/항로 집중도와 완주율을 계산한다', () => {
   const results = [
     runSimulation({ bot: 'greedy', seed: 'summary-0' }),
@@ -133,6 +162,8 @@ test('시뮬레이션 요약은 상품/항로 집중도와 완주율을 계산�
   assert.ok(summary.topRoute);
   assert.ok(summary.topRoutePair);
   assert.ok(summary.routePairCounts);
+  assert.ok(summary.tradeRouteCounts);
+  assert.ok(summary.tradeRoutePairCounts);
   assert.ok(summary.productWins);
   assert.ok(Array.isArray(summary.warnings));
 });
