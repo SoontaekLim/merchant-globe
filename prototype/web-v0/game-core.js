@@ -20,9 +20,9 @@
     seoul: {
       id: 'seoul', name: '서울', country: '대한민국',
       summary: '인삼·종이 생산과 향신료 소비가 두드러지는 균형형 시장',
-      production: { ginseng: 1.40, paper: 1.25, rice: 1.10 },
+      production: { ginseng: 1.25, paper: 1.25, rice: 1.10 },
       consumption: { spice: 1.28, tea: 1.10, copper: 1.08 },
-      modifiers: { rice: 0.82, tea: 1.08, silk: 1.05, ceramic: 0.88, ginseng: 0.68, timber: 1.05, iron: 1.08, spice: 1.24, fish: 1.02, paper: 0.86, cotton: 1.04, copper: 1.12 }
+      modifiers: { rice: 0.82, tea: 1.08, silk: 1.05, ceramic: 0.88, ginseng: 0.80, timber: 1.05, iron: 1.08, spice: 1.24, fish: 1.02, paper: 0.86, cotton: 1.04, copper: 1.12 }
     },
     busan: {
       id: 'busan', name: '부산', country: '대한민국',
@@ -42,15 +42,15 @@
       id: 'osaka', name: '오사카', country: '일본',
       summary: '공업품 생산과 인삼·쌀 소비가 강한 대형 시장',
       production: { iron: 1.35, ceramic: 1.30, copper: 1.25 },
-      consumption: { ginseng: 1.42, rice: 1.15, timber: 1.10 },
-      modifiers: { rice: 1.11, tea: 0.93, silk: 0.94, ceramic: 0.82, ginseng: 1.38, timber: 1.07, iron: 0.87, spice: 1.04, fish: 0.91, paper: 0.88, cotton: 0.91, copper: 0.86 }
+      consumption: { ginseng: 1.28, rice: 1.15, timber: 1.10 },
+      modifiers: { rice: 1.11, tea: 0.93, silk: 0.94, ceramic: 0.82, ginseng: 1.22, timber: 1.07, iron: 0.87, spice: 1.04, fish: 0.91, paper: 0.88, cotton: 0.91, copper: 0.86 }
     },
     shanghai: {
       id: 'shanghai', name: '상하이', country: '중국',
       summary: '차·비단·면직물 공급이 풍부하고 목재 소비가 강한 생산시장',
       production: { tea: 1.50, silk: 1.45, cotton: 1.40, ceramic: 1.20 },
       consumption: { timber: 1.28, ginseng: 1.16, iron: 1.10 },
-      modifiers: { rice: 0.96, tea: 0.66, silk: 0.69, ceramic: 0.76, ginseng: 1.27, timber: 1.13, iron: 1.12, spice: 0.83, fish: 1.08, paper: 0.79, cotton: 0.78, copper: 1.08 }
+      modifiers: { rice: 0.96, tea: 0.66, silk: 0.69, ceramic: 0.76, ginseng: 1.18, timber: 1.13, iron: 1.12, spice: 0.83, fish: 1.08, paper: 0.79, cotton: 0.78, copper: 1.08 }
     }
   };
 
