@@ -29,14 +29,14 @@
       summary: '수산물 생산이 빠르고 비단 소비가 강한 항구 시장',
       production: { fish: 1.55, timber: 1.10 },
       consumption: { silk: 1.18, spice: 1.12, cotton: 1.10 },
-      modifiers: { rice: 0.94, tea: 1.02, silk: 1.11, ceramic: 1.02, ginseng: 0.88, timber: 0.96, iron: 0.98, spice: 1.10, fish: 0.67, paper: 1.01, cotton: 1.06, copper: 1.00 }
+      modifiers: { rice: 0.94, tea: 1.02, silk: 1.11, ceramic: 1.02, ginseng: 0.94, timber: 0.96, iron: 0.98, spice: 1.10, fish: 0.67, paper: 1.01, cotton: 1.06, copper: 1.00 }
     },
     fukuoka: {
       id: 'fukuoka', name: '후쿠오카', country: '일본',
       summary: '차·목재 생산과 인삼 소비가 뚜렷한 근거리 교역 시장',
       production: { tea: 1.30, timber: 1.28, fish: 1.12 },
-      consumption: { ginseng: 1.38, silk: 1.12 },
-      modifiers: { rice: 1.06, tea: 0.86, silk: 1.16, ceramic: 0.92, ginseng: 1.34, timber: 0.90, iron: 1.02, spice: 1.13, fish: 0.76, paper: 0.93, cotton: 1.08, copper: 1.04 }
+      consumption: { ginseng: 1.22, silk: 1.12 },
+      modifiers: { rice: 1.06, tea: 0.86, silk: 1.16, ceramic: 0.92, ginseng: 1.22, timber: 0.90, iron: 1.02, spice: 1.13, fish: 0.76, paper: 0.93, cotton: 1.08, copper: 1.04 }
     },
     osaka: {
       id: 'osaka', name: '오사카', country: '일본',
