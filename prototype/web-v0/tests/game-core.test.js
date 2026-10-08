@@ -16,6 +16,16 @@ test('인삼의 지역 정체성은 유지하되 도시 간 가격 극단은 완
   assert.ok(highestBase - lowestBase < 850);
 });
 
+test('상하이-후쿠오카 비단 가격차는 공급지 정체성을 유지하면서 완화한다', () => {
+  assert.equal(CITIES.shanghai.modifiers.silk, 0.78);
+  assert.equal(CITIES.shanghai.production.silk, 1.30);
+  assert.equal(CITIES.fukuoka.modifiers.silk, 1.10);
+
+  const shanghaiBase = 1500 * CITIES.shanghai.modifiers.silk;
+  const fukuokaBase = 1500 * CITIES.fukuoka.modifiers.silk;
+  assert.ok(fukuokaBase - shanghaiBase < 500);
+});
+
 function test(name, fn) {
   try {
     fn();
