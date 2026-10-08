@@ -63,7 +63,7 @@ merchant-globe/
 
 ## 개발 검증
 
-모든 Pull Request와 `main` 브랜치 push에서 GitHub Actions CI가 자동 실행됩니다. 내부 개발은 `self-hosted` + `merchant-globe` 러너를 기본으로 사용하고, 외부 fork PR은 GitHub-hosted 러너에서 실행합니다. 로컬 러너를 사용할 수 없을 때는 PR에 `ci:github-hosted` 레이블을 붙이거나 Actions의 수동 실행에서 `runner: github`를 선택할 수 있습니다.
+모든 Pull Request와 `main` 브랜치 push에서 GitHub Actions CI가 자동 실행됩니다. 저장소 변수 `DEFAULT_RUNNER`로 기본 러너를 선택할 수 있습니다. 값은 `local` (`self-hosted` + `merchant-globe`) 또는 `github` (`ubuntu-latest`)이며, 변수가 없거나 유효하지 않으면 `local`을 사용합니다. Actions 수동 실행에서는 `runner: default`가 `DEFAULT_RUNNER` 값을 따르고, `runner: local` 또는 `runner: github`를 직접 선택하면 저장소 설정보다 우선합니다. 외부 fork PR과 `ci:github-hosted` 레이블이 붙은 PR은 설정과 무관하게 GitHub-hosted 러너에서 실행합니다.
 
 CI는 현재 다음을 확인합니다.
 

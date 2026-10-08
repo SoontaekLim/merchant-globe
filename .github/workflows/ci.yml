@@ -9,11 +9,12 @@ on:
   workflow_dispatch:
     inputs:
       runner:
-        description: Runner to use
+        description: Runner to use (default follows DEFAULT_RUNNER)
         required: true
-        default: local
+        default: default
         type: choice
         options:
+          - default
           - local
           - github
 
@@ -23,7 +24,14 @@ permissions:
 jobs:
   prototype:
     name: Prototype checks
-    runs-on: ${{ fromJSON((((github.event_name == 'workflow_dispatch' && inputs.runner == 'github') || (github.event_name == 'pull_request' && (github.event.pull_request.head.repo.full_name != github.repository || contains(github.event.pull_request.labels.*.name, 'ci:github-hosted')))) && '["ubuntu-latest"]') || '["self-hosted","merchant-globe"]') }}
+    # Fork PRs and the ci:github-hosted label always use GitHub-hosted runners.
+    # Explicit manual choices override DEFAULT_RUNNER; 'default' follows that variable.
+    runs-on: >-
+      ${{ fromJSON((
+        (github.event_name == 'pull_request' && (github.event.pull_request.head.repo.full_name != github.repository || contains(github.event.pull_request.labels.*.name, 'ci:github-hosted')))
+        || (github.event_name == 'workflow_dispatch' && inputs.runner == 'github')
+        || ((github.event_name != 'workflow_dispatch' || inputs.runner == 'default') && vars.DEFAULT_RUNNER == 'github')
+      ) && '["ubuntu-latest"]' || '["self-hosted","merchant-globe"]') }}
     timeout-minutes: 15
 
     defaults:
