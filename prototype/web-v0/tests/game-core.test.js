@@ -1,5 +1,15 @@
 const assert = require('node:assert/strict');
-const { Game } = require('../game-core.js');
+const { Game, CITIES } = require('../game-core.js');
+
+test('부산-후쿠오카 인삼의 구조적 가격차는 완화된 0.4 밸런스를 사용한다', () => {
+  assert.equal(CITIES.busan.modifiers.ginseng, 0.94);
+  assert.equal(CITIES.fukuoka.modifiers.ginseng, 1.22);
+  assert.equal(CITIES.fukuoka.consumption.ginseng, 1.22);
+
+  const busanBase = 1900 * CITIES.busan.modifiers.ginseng;
+  const fukuokaBase = 1900 * CITIES.fukuoka.modifiers.ginseng;
+  assert.ok(fukuokaBase - busanBase < 600);
+});
 
 function test(name, fn) {
   try {
