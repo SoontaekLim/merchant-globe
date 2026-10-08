@@ -12,10 +12,6 @@ class GreedyBot {
     this.visited.add(observation.cityId);
 
     const held = observation.inventory.filter((item) => item.qty > 0);
-    if (held.length) {
-      const item = held.reduce((best, row) => row.qty > best.qty ? row : best, held[0]);
-      return { type: 'sell', productId: item.productId, quantity: item.qty };
-    }
 
     if (this.pendingDestination) {
       const route = observation.routes[this.pendingDestination];
@@ -27,20 +23,25 @@ class GreedyBot {
       this.pendingDestination = null;
     }
 
+    if (held.length) {
+      const item = held.reduce((best, row) => row.qty > best.qty ? row : best, held[0]);
+      return { type: 'sell', productId: item.productId, quantity: item.qty };
+    }
+
     const opportunities = [];
     for (const local of observation.localMarket) {
       const cargoSize = Math.max(1, local.cargoSize);
       const maxByCargo = Math.floor(observation.cargoFree / cargoSize);
       const buyUnitEstimate = local.price * 1.02;
-      const maxByCash = Math.floor(observation.cash / Math.max(1, buyUnitEstimate));
-      const maxQty = Math.min(local.stock, maxByCargo, maxByCash);
-      if (maxQty <= 0) continue;
-
       for (const [destinationId, remote] of Object.entries(observation.remoteMarkets)) {
         const route = observation.routes[destinationId];
-        if (!route || observation.cash < route.cost) continue;
+        if (!route || observation.cash <= route.cost) continue;
         const entry = remote.entries.find((row) => row.productId === local.productId);
         if (!entry) continue;
+
+        const maxByCash = Math.floor((observation.cash - route.cost) / Math.max(1, buyUnitEstimate));
+        const maxQty = Math.min(local.stock, maxByCargo, maxByCash);
+        if (maxQty <= 0) continue;
 
         const agePenalty = Math.min(0.18, (entry.age || 0) * 0.025);
         const freshnessAfterTravel = local.trait === 'perishable'
