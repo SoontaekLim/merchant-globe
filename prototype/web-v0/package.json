@@ -7,6 +7,7 @@
     "test": "node tests/game-core.test.js && node tests/save-system.test.js && node tests/simulation.test.js",
     "simulate": "node simulation/runner.js --runs 100 --bot all",
     "simulate:quick": "node simulation/runner.js --runs 10 --bot all",
-    "simulate:balance": "node simulation/runner.js --runs 1000 --bot greedy"
+    "simulate:balance": "node simulation/runner.js --runs 1000 --bot greedy",
+    "simulate:ci": "node simulation/runner.js --runs 100 --bot greedy"
   }
 }
