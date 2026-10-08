@@ -59,8 +59,8 @@ jobs:
       - name: Run economy tests
         run: npm test
 
-      - name: Run quick balance simulation
-        run: npm run simulate:quick
+      - name: Run 100-game balance simulation
+        run: npm run simulate:ci
 
       - name: Check Python server syntax
         run: python -m py_compile server.py
