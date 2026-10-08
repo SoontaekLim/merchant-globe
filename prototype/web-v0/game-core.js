@@ -145,8 +145,10 @@
           const consumptionFactor = (city.consumption && city.consumption[p.id]) || 1;
           const base = p.basePrice * modifier;
           const priceJitter = 1 + (this.rng() - 0.5) * p.volatility * 1.2;
-          const targetStock = Math.round(clamp((62 / modifier) * productionFactor, 34, 128));
-          const targetDemand = Math.round(clamp(90 * modifier * consumptionFactor, 55, 150));
+          const productionIdentity = 1 + (productionFactor - 1) * 0.55;
+          const consumptionIdentity = 1 + (consumptionFactor - 1) * 0.55;
+          const targetStock = Math.round(clamp((62 / modifier) * productionIdentity, 34, 128));
+          const targetDemand = Math.round(clamp(90 * modifier * consumptionIdentity, 55, 150));
           const initialStock = Math.round(targetStock * (0.88 + this.rng() * 0.24));
           const initialDemand = Math.round(targetDemand * (0.92 + this.rng() * 0.16));
 
@@ -563,12 +565,12 @@
             const effectiveStockTarget = state.targetStock * activeTargets.stockTargetMultiplier;
             const effectiveDemandTarget = state.targetDemand * activeTargets.demandTargetMultiplier;
 
-            const stockRecoveryRate = clamp(0.20 + (state.productionFactor - 1) * 0.18, 0.16, 0.34);
+            const stockRecoveryRate = clamp(0.20 + (state.productionFactor - 1) * 0.12, 0.16, 0.30);
             const stockRecovery = (effectiveStockTarget - state.stock) * stockRecoveryRate;
             const stockNoise = (this.rng() - 0.5) * 3.2;
             state.stock = clamp(state.stock + stockRecovery + stockNoise, 1, state.targetStock * 2.5);
 
-            const demandRecoveryRate = clamp(0.27 + (state.consumptionFactor - 1) * 0.10, 0.24, 0.34);
+            const demandRecoveryRate = clamp(0.27 + (state.consumptionFactor - 1) * 0.07, 0.24, 0.32);
             const demandRecovery = (effectiveDemandTarget - state.demand) * demandRecoveryRate;
             const demandNoise = (this.rng() - 0.5) * (6 + p.volatility * 28);
             state.demand = clamp(state.demand + demandRecovery + demandNoise, state.targetDemand * 0.55, state.targetDemand * 1.65);
