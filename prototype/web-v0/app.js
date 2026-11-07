@@ -3,11 +3,13 @@
 
   const { Game, PRODUCTS, CITIES, ROUTES, INTEL_LEVELS } = window.MerchantGlobeCore;
   const SaveSystem = window.MerchantGlobeSave;
+  const ReportSystem = window.MerchantGlobeReport;
   const SAVE_KEY = 'merchant-globe.mvp.save.v1';
 
   let gameSeed = Date.now();
   let actionHistory = [];
   let game = new Game({ maxDay: 30, seed: gameSeed });
+  let playReport = null;
   let selectedIntelCity = 'busan';
   let toastTimer = null;
 
@@ -43,6 +45,48 @@
     node.textContent = hasSave ? `저장됨 · Day ${game.day}` : '저장 없음';
   }
 
+  function refreshPlayReport() {
+    try {
+      playReport = ReportSystem.buildReport({
+        seed: gameSeed,
+        maxDay: game.maxDay,
+        actions: actionHistory
+      }, Game, SaveSystem);
+    } catch (error) {
+      console.error('Merchant Globe report generation failed:', error);
+      playReport = null;
+    }
+  }
+
+  function exportPlayLog() {
+    if (!playReport) {
+      showToast('플레이 기록을 생성하지 못했습니다.', true);
+      return;
+    }
+
+    try {
+      const payload = {
+        exportVersion: 1,
+        exportedAt: new Date().toISOString(),
+        report: playReport,
+        actions: actionHistory
+      };
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      const safeSeed = String(gameSeed).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 50);
+      link.href = url;
+      link.download = 'merchant-globe-' + safeSeed + '-day-' + game.day + '.json';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 0);
+      showToast('플레이 기록을 JSON 파일로 내보냈습니다.');
+    } catch (error) {
+      showToast(error.message || '기록 내보내기에 실패했습니다.', true);
+    }
+  }
+
   function saveGame(showMessage = false) {
     try {
       const payload = SaveSystem.createSavePayload({
@@ -64,7 +108,9 @@
 
   function recordAction(action) {
     actionHistory.push(JSON.parse(JSON.stringify(action)));
+    refreshPlayReport();
     saveGame(false);
+    render();
   }
 
   function loadSavedGame() {
@@ -103,9 +149,7 @@
 
   function safeAction(fn) {
     try {
-      const result = fn();
-      render();
-      return result;
+      return fn();
     } catch (error) {
       showToast(error.message || '처리 중 오류가 발생했습니다.', true);
       return null;
@@ -372,6 +416,7 @@
     actionHistory = [];
     game = new Game({ maxDay: 30, seed: gameSeed });
     selectedIntelCity = 'busan';
+    refreshPlayReport();
     el('newsTitle').textContent = '시장 정보';
     el('newsText').textContent = '도시 생산·소비, 상품 특성, 항로 상태를 함께 보세요. 같은 가격 차이도 상황에 따라 수익성이 달라집니다.';
     saveGame(false);
@@ -395,12 +440,15 @@
     }
   });
   el('saveGameBtn').addEventListener('click', () => saveGame(true));
+  el('exportPlayLogBtn').addEventListener('click', exportPlayLog);
+  el('exportResultBtn').addEventListener('click', exportPlayLog);
   el('deleteSaveBtn').addEventListener('click', deleteSavedGame);
   el('newGameBtn').addEventListener('click', () => newGame(false));
   el('restartBtn').addEventListener('click', () => newGame(true));
 
   const restored = loadSavedGame();
   if (!restored) saveGame(false);
+  refreshPlayReport();
   render();
 
   if (restored) {
