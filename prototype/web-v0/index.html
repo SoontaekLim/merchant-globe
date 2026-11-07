@@ -16,6 +16,7 @@
       </div>
       <div style="display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap;">
         <span id="saveStatus" class="muted">저장 없음</span>
+        <button id="exportPlayLogBtn" class="secondary-button" type="button">플레이 기록 JSON</button>
         <button id="saveGameBtn" class="secondary-button" type="button">저장</button>
         <button id="deleteSaveBtn" class="secondary-button" type="button">저장 삭제</button>
         <button id="newGameBtn" class="secondary-button" type="button">새 게임</button>
@@ -141,7 +142,7 @@
           <div class="panel-heading compact">
             <div>
               <p class="section-label">TRADE LOG</p>
-              <h2>최근 기록</h2>
+              <h2>플레이 기록</h2>
             </div>
           </div>
           <div id="tradeLog" class="trade-log"></div>
@@ -153,7 +154,29 @@
         <h2>첫 거래 기간이 종료되었습니다</h2>
         <p id="gameOverSummary"></p>
         <div id="resultStats" class="result-grid"></div>
-        <button id="restartBtn" class="primary-button" type="button">다시 시작</button>
+        <div class="report-insights" id="resultHighlights"></div>
+        <section class="asset-history-panel" aria-labelledby="assetHistoryTitle">
+          <div class="report-heading">
+            <h3 id="assetHistoryTitle">자산 변화</h3>
+            <p>거래 또는 도시 이동 직후 관측된 날짜별 마지막 자산을 표시합니다.</p>
+          </div>
+          <svg id="assetHistoryChart" viewBox="0 0 720 215" role="img" aria-label="거래 기간 자산 변화" preserveAspectRatio="xMidYMid meet"></svg>
+        </section>
+        <div class="report-breakdown">
+          <section>
+            <h3>상품별 실현손익</h3>
+            <div id="resultProducts" class="table-wrap"></div>
+          </section>
+          <section>
+            <h3>많이 이용한 왕복 항로</h3>
+            <div id="resultRoutes" class="table-wrap"></div>
+          </section>
+        </div>
+        <p class="report-footnote">판매 실현손익은 매입원가 대비 계산하며 운송비는 별도입니다. 최종 자산은 남은 화물의 현재 도시 평가금액을 포함하므로 실현손익과 일치하지 않을 수 있습니다.</p>
+        <div class="report-buttons">
+          <button id="exportResultBtn" class="secondary-button" type="button">전체 플레이 기록 JSON 내보내기</button>
+          <button id="restartBtn" class="primary-button" type="button">다시 시작</button>
+        </div>
       </section>
     </main>
 
@@ -162,6 +185,7 @@
 
   <script src="game-core.js"></script>
   <script src="save-system.js"></script>
+  <script src="play-report.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

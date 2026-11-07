@@ -185,3 +185,27 @@ tr:last-child td { border-bottom: 0; }
 .route-button .route-changed {
   color: var(--warning);
 }
+
+/* v0.5: playtest timeline and 30-day report */
+.report-insights { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 16px; }
+.report-insights > div { padding: 13px; border: 1px solid var(--border); border-radius: 12px; background: rgba(7,17,31,.58); }
+.report-insights span { display: block; color: var(--muted); font-size: .75rem; margin-bottom: 4px; }
+.report-insights strong { display: block; color: var(--text); font-size: .88rem; overflow-wrap: anywhere; }
+.asset-history-panel { padding: 16px; border-radius: 14px; border: 1px solid var(--border); background: rgba(7,17,31,.48); margin-bottom: 16px; }
+.report-heading { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px 14px; margin-bottom: 12px; }
+.report-heading h3, .report-breakdown h3 { margin: 0 0 8px; font-size: .96rem; }
+.report-heading h3 { margin: 0; }
+.report-heading p { margin: 0; color: var(--muted); font-size: .73rem; }
+#assetHistoryChart { display: block; width: 100%; height: auto; min-height: 150px; }
+.report-breakdown { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 13px; }
+.report-breakdown > section { min-width: 0; }
+.report-table { min-width: 0; }
+.report-table th, .report-table td { padding: 8px; }
+.report-footnote { color: var(--muted) !important; font-size: .76rem; margin: 0 0 16px; }
+.report-buttons { display: flex; gap: 10px; flex-wrap: wrap; }
+.report-buttons .primary-button { padding: 9px 20px; }
+@media (max-width: 650px) {
+  .report-insights, .report-breakdown { grid-template-columns: 1fr; }
+  .report-buttons > button { width: 100%; }
+  .topbar { flex-wrap: wrap; }
+}

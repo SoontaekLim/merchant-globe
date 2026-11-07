@@ -3,11 +3,15 @@
 
   const { Game, PRODUCTS, CITIES, ROUTES, INTEL_LEVELS } = window.MerchantGlobeCore;
   const SaveSystem = window.MerchantGlobeSave;
+  const ReportSystem = window.MerchantGlobeReport;
   const SAVE_KEY = 'merchant-globe.mvp.save.v1';
+  const INTEL_VIEW_KEY = 'merchant-globe.mvp.intel-views.v1';
 
   let gameSeed = Date.now();
   let actionHistory = [];
   let game = new Game({ maxDay: 30, seed: gameSeed });
+  let playReport = null;
+  let intelViews = [];
   let selectedIntelCity = 'busan';
   let toastTimer = null;
 
@@ -43,6 +47,79 @@
     node.textContent = hasSave ? `저장됨 · Day ${game.day}` : '저장 없음';
   }
 
+  function storeIntelViews() {
+    try {
+      localStorage.setItem(INTEL_VIEW_KEY, JSON.stringify({ seed: gameSeed, views: intelViews }));
+    } catch (error) {
+      console.warn('Merchant Globe market-view log save failed:', error);
+    }
+  }
+
+  function restoreIntelViews() {
+    intelViews = [];
+    try {
+      const raw = localStorage.getItem(INTEL_VIEW_KEY);
+      if (!raw) return;
+      const saved = JSON.parse(raw);
+      if (String(saved.seed) === String(gameSeed) && Array.isArray(saved.views)) {
+        intelViews = saved.views.slice(-500);
+      }
+    } catch (error) {
+      console.warn('Merchant Globe market-view log restore failed:', error);
+    }
+  }
+
+  function trackIntelView(targetCityId) {
+    const entry = ReportSystem.captureIntelView(game, targetCityId);
+    entry.viewedAt = new Date().toISOString();
+    intelViews.push(entry);
+    intelViews = intelViews.slice(-500);
+    storeIntelViews();
+  }
+
+  function refreshPlayReport() {
+    try {
+      playReport = ReportSystem.buildReport({
+        seed: gameSeed,
+        maxDay: game.maxDay,
+        actions: actionHistory
+      }, Game, SaveSystem);
+    } catch (error) {
+      console.error('Merchant Globe report generation failed:', error);
+      playReport = null;
+    }
+  }
+
+  function exportPlayLog() {
+    if (!playReport) {
+      showToast('플레이 기록을 생성하지 못했습니다.', true);
+      return;
+    }
+
+    try {
+      const payload = {
+        exportVersion: 1,
+        exportedAt: new Date().toISOString(),
+        report: playReport,
+        actions: actionHistory,
+        intelViews
+      };
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      const safeSeed = String(gameSeed).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 50);
+      link.href = url;
+      link.download = 'merchant-globe-' + safeSeed + '-day-' + game.day + '.json';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 0);
+      showToast('플레이 기록을 JSON 파일로 내보냈습니다.');
+    } catch (error) {
+      showToast(error.message || '기록 내보내기에 실패했습니다.', true);
+    }
+  }
+
   function saveGame(showMessage = false) {
     try {
       const payload = SaveSystem.createSavePayload({
@@ -64,7 +141,9 @@
 
   function recordAction(action) {
     actionHistory.push(JSON.parse(JSON.stringify(action)));
+    refreshPlayReport();
     saveGame(false);
+    render();
   }
 
   function loadSavedGame() {
@@ -94,6 +173,8 @@
   function deleteSavedGame() {
     try {
       localStorage.removeItem(SAVE_KEY);
+      localStorage.removeItem(INTEL_VIEW_KEY);
+      intelViews = [];
       updateSaveStatus(false);
       showToast('저장 데이터를 삭제했습니다. 다음 거래부터 다시 자동저장됩니다.');
     } catch (error) {
@@ -103,9 +184,7 @@
 
   function safeAction(fn) {
     try {
-      const result = fn();
-      render();
-      return result;
+      return fn();
     } catch (error) {
       showToast(error.message || '처리 중 오류가 발생했습니다.', true);
       return null;
@@ -262,6 +341,7 @@
       button.innerHTML = `<strong>${city.name}</strong><span>${city.id === game.cityId ? '현재 · 실시간' : '원격'}</span>`;
       button.addEventListener('click', () => {
         selectedIntelCity = city.id;
+        trackIntelView(city.id);
         renderIntel();
         saveGame(false);
       });
@@ -322,9 +402,39 @@
     }).join('');
   }
 
+  function describePlayEntry(entry) {
+    if (entry.type === 'event') return '시장 소식 · ' + entry.title;
+    if (entry.type === 'buy') {
+      return CITIES[entry.cityId].name + ' · ' + productNames([entry.productId]) + ' ' + entry.quantity + '개 매입 ' + money(entry.total);
+    }
+    if (entry.type === 'sell') {
+      return CITIES[entry.cityId].name + ' · ' + productNames([entry.productId]) + ' ' + entry.quantity + '개 판매 · 손익 ' + signedMoney(entry.profit);
+    }
+    if (entry.type === 'travel') {
+      return CITIES[entry.from].name + ' → ' + CITIES[entry.to].name + ' · ' + entry.days + '일 / ' + money(entry.cost);
+    }
+    if (entry.type === 'upgradeCargo') return '화물칸 확장 · ' + money(entry.cost);
+    if (entry.type === 'upgradeIntel') return '정보망 확장 · ' + money(entry.cost);
+    return '행동 기록';
+  }
+
   function renderLog() {
     const list = el('tradeLog');
-    list.innerHTML = game.logs.slice(0, 8).map((row) => `<div class="log-row"><b>Day ${row.day}</b>${row.text}</div>`).join('');
+    list.replaceChildren();
+
+    const entries = playReport ? playReport.timeline.slice(-10).reverse() : [];
+    if (!entries.length) {
+      list.innerHTML = '<div class="empty-state">아직 기록된 행동이 없습니다. 첫 거래를 시작해 보세요.</div>';
+      return;
+    }
+    entries.forEach((entry) => {
+      const row = document.createElement('div');
+      row.className = 'log-row';
+      const label = document.createElement('b');
+      label.textContent = 'Day ' + entry.day;
+      row.append(label, document.createTextNode(describePlayEntry(entry)));
+      list.appendChild(row);
+    });
   }
 
   function updateNews(event) {
@@ -339,17 +449,137 @@
     el('newsText').textContent = `${city.summary}. 재고와 수요를 함께 보고 다음 거래를 결정하세요.`;
   }
 
+  function renderAssetHistory() {
+    const svg = el('assetHistoryChart');
+    svg.replaceChildren();
+    if (!playReport || !playReport.dailyAssets.length) return;
+
+    const svgNs = 'http://www.w3.org/2000/svg';
+    const values = playReport.dailyAssets;
+    const minValue = Math.min(0, ...values.map((row) => row.assets));
+    const maxValue = Math.max(1, ...values.map((row) => row.assets));
+    const left = 70;
+    const top = 14;
+    const width = 624;
+    const height = 163;
+    const maxDay = Math.max(2, playReport.maxDay);
+    const x = (day) => left + ((day - 1) / (maxDay - 1)) * width;
+    const y = (assets) => top + height * (1 - (assets - minValue) / (maxValue - minValue));
+
+    function element(tag, attributes, content) {
+      const node = document.createElementNS(svgNs, tag);
+      Object.entries(attributes).forEach(([key, value]) => node.setAttribute(key, String(value)));
+      if (content != null) node.textContent = String(content);
+      svg.appendChild(node);
+      return node;
+    }
+
+    [0, 0.5, 1].forEach((ratio) => {
+      const value = minValue + (maxValue - minValue) * ratio;
+      const lineY = y(value);
+      element('line', { x1: left, y1: lineY, x2: left + width, y2: lineY, stroke: '#30445e', 'stroke-width': 1 });
+      element('text', { x: left - 8, y: lineY + 4, fill: '#91a4bf', 'font-size': 11, 'text-anchor': 'end' }, money(value));
+    });
+
+    element('text', { x: left, y: 203, fill: '#91a4bf', 'font-size': 12 }, 'Day 1');
+    element('text', { x: left + width, y: 203, fill: '#91a4bf', 'font-size': 12, 'text-anchor': 'end' }, 'Day ' + playReport.maxDay);
+
+    const points = values.map((row) => x(row.day) + ',' + y(row.assets)).join(' ');
+    element('polyline', {
+      points,
+      fill: 'none',
+      stroke: '#42d6b2',
+      'stroke-width': 3,
+      'stroke-linejoin': 'round',
+      'stroke-linecap': 'round'
+    });
+    values.forEach((row) => {
+      const circle = element('circle', { cx: x(row.day), cy: y(row.assets), r: 3.5, fill: '#42d6b2' });
+      const title = document.createElementNS(svgNs, 'title');
+      title.textContent = 'Day ' + row.day + ' · 자산 ' + money(row.assets) + ' · 현금 ' + money(row.cash);
+      circle.appendChild(title);
+    });
+    svg.setAttribute('aria-label', '자산 변화: ' + values.map((row) => 'Day ' + row.day + ' ' + money(row.assets)).join(', '));
+  }
+
   function renderGameOver() {
     const panel = el('gameOverPanel');
     panel.hidden = !game.gameOver;
     if (!game.gameOver) return;
-    const s = game.stats;
-    el('gameOverSummary').textContent = `30일 동안 ${s.trips}번 이동하고 ${s.buys + s.sells}번 거래했습니다.`;
-    el('resultStats').innerHTML = `
-      <div><span>최종 자산</span><strong>${money(game.totalAssets())}</strong></div>
-      <div><span>실현 손익</span><strong class="${s.realizedProfit >= 0 ? 'positive' : 'negative'}">${signedMoney(s.realizedProfit)}</strong></div>
-      <div><span>거래 물량</span><strong>${s.unitsBought + s.unitsSold}개</strong></div>
-      <div><span>운송비</span><strong>${money(s.transportCost)}</strong></div>`;
+
+    const report = playReport;
+    if (!report) {
+      el('gameOverSummary').textContent = '결과 리포트를 생성하지 못했습니다. 저장된 플레이 기록을 확인해 주세요.';
+      return;
+    }
+
+    const stats = report.stats;
+    el('gameOverSummary').textContent =
+      '30일 동안 ' + stats.trips + '번 이동하고 ' + (stats.buys + stats.sells) + '번 거래했습니다. 방문한 도시는 ' +
+      Object.keys(report.cityVisits).length + '곳입니다.';
+
+    el('resultStats').innerHTML =
+      '<div><span>시작 자산</span><strong>' + money(report.startingAssets) + '</strong></div>' +
+      '<div><span>최종 자산</span><strong>' + money(report.finalAssets) + '</strong></div>' +
+      '<div><span>자산 증감</span><strong class="' + (report.netAssetsChange >= 0 ? 'positive' : 'negative') + '">' + signedMoney(report.netAssetsChange) + '</strong></div>' +
+      '<div><span>판매 실현손익</span><strong class="' + (stats.realizedProfit >= 0 ? 'positive' : 'negative') + '">' + signedMoney(stats.realizedProfit) + '</strong></div>' +
+      '<div><span>총 운송비</span><strong>' + money(stats.transportCost) + '</strong></div>' +
+      '<div><span>매입·판매 물량</span><strong>' + (stats.unitsBought + stats.unitsSold) + '개</strong></div>' +
+      '<div><span>도시 방문</span><strong>' + Object.keys(report.cityVisits).length + '곳</strong></div>' +
+      '<div><span>업그레이드</span><strong>화물 ' + report.upgrades.cargo + ' · 정보 ' + report.upgrades.intel + '</strong></div>' +
+      '<div><span>원격 시장 조회</span><strong>' + intelViews.filter((row) => row.targetCityId !== row.fromCityId).length + '회</strong></div>';
+
+    const best = report.bestSale;
+    const worst = report.worstSale;
+    const topProduct = report.leadingProduct && report.leadingProduct.realizedProfit > 0
+      ? productNames([report.leadingProduct.productId]) + ' ' + signedMoney(report.leadingProduct.realizedProfit)
+      : '이익을 낸 상품 없음';
+    const topRoute = report.busiestRoute
+      ? report.busiestRoute.route.split('<->').map((id) => CITIES[id].name).join(' ↔ ') + ' ' + report.busiestRoute.count + '회'
+      : '이동 없음';
+
+    function saleDescription(sale) {
+      if (!sale) return '판매 기록 없음';
+      return CITIES[sale.cityId].name + ' · ' + productNames([sale.productId]) +
+        ' ' + sale.quantity + '개 / ' + signedMoney(sale.profit);
+    }
+
+    el('resultHighlights').replaceChildren();
+    [
+      ['최고 수익 상품', topProduct],
+      ['가장 많이 이용한 항로', topRoute],
+      ['최고 판매 손익', saleDescription(best)],
+      ['최악 판매 손익', saleDescription(worst)]
+    ].forEach(([name, value]) => {
+      const item = document.createElement('div');
+      const heading = document.createElement('span');
+      heading.textContent = name;
+      const detail = document.createElement('strong');
+      detail.textContent = value;
+      item.append(heading, detail);
+      el('resultHighlights').appendChild(item);
+    });
+
+    const products = Object.entries(report.productTotals)
+      .filter(([, totals]) => totals.sold > 0)
+      .sort((a, b) => b[1].realizedProfit - a[1].realizedProfit);
+    el('resultProducts').innerHTML = products.length
+      ? '<table class="report-table"><thead><tr><th>상품</th><th class="number">판매량</th><th class="number">실현손익</th></tr></thead><tbody>' +
+        products.map(([id, item]) => '<tr><td>' + productNames([id]) + '</td><td class="number">' + item.sold + '개</td><td class="number ' +
+          (item.realizedProfit >= 0 ? 'positive' : 'negative') + '">' + signedMoney(item.realizedProfit) + '</td></tr>').join('') +
+        '</tbody></table>'
+      : '<p class="muted">판매한 상품이 없습니다.</p>';
+
+    const routes = Object.entries(report.routePairCounts).sort((a, b) => b[1] - a[1]).slice(0, 8);
+    el('resultRoutes').innerHTML = routes.length
+      ? '<table class="report-table"><thead><tr><th>항로</th><th class="number">이동</th></tr></thead><tbody>' +
+        routes.map(([route, count]) => '<tr><td>' +
+          route.split('<->').map((id) => CITIES[id].name).join(' ↔ ') +
+          '</td><td class="number">' + count + '회</td></tr>').join('') +
+        '</tbody></table>'
+      : '<p class="muted">이동한 항로가 없습니다.</p>';
+
+    renderAssetHistory();
   }
 
   function render() {
@@ -372,6 +602,9 @@
     actionHistory = [];
     game = new Game({ maxDay: 30, seed: gameSeed });
     selectedIntelCity = 'busan';
+    intelViews = [];
+    storeIntelViews();
+    refreshPlayReport();
     el('newsTitle').textContent = '시장 정보';
     el('newsText').textContent = '도시 생산·소비, 상품 특성, 항로 상태를 함께 보세요. 같은 가격 차이도 상황에 따라 수익성이 달라집니다.';
     saveGame(false);
@@ -395,12 +628,16 @@
     }
   });
   el('saveGameBtn').addEventListener('click', () => saveGame(true));
+  el('exportPlayLogBtn').addEventListener('click', exportPlayLog);
+  el('exportResultBtn').addEventListener('click', exportPlayLog);
   el('deleteSaveBtn').addEventListener('click', deleteSavedGame);
   el('newGameBtn').addEventListener('click', () => newGame(false));
   el('restartBtn').addEventListener('click', () => newGame(true));
 
   const restored = loadSavedGame();
   if (!restored) saveGame(false);
+  restoreIntelViews();
+  refreshPlayReport();
   render();
 
   if (restored) {
