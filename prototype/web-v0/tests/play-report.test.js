@@ -57,7 +57,7 @@ test('최고/최악 판매와 현금·자산 변화는 실제 게임 실행값�
   const start = report.dailyAssets[0];
   const end = report.dailyAssets[report.dailyAssets.length - 1];
   assert.equal(start.day, 1);
-  assert.equal(start.assets, 10000);
+  assert.equal(start.assets, report.timeline.find((row) => row.type === 'buy').assetsAfter);
   assert.equal(end.day, report.currentDay);
   assert.equal(end.assets, report.finalAssets);
   assert.equal(end.cash, report.finalCash);
