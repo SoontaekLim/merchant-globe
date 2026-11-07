@@ -5,11 +5,13 @@
   const SaveSystem = window.MerchantGlobeSave;
   const ReportSystem = window.MerchantGlobeReport;
   const SAVE_KEY = 'merchant-globe.mvp.save.v1';
+  const INTEL_VIEW_KEY = 'merchant-globe.mvp.intel-views.v1';
 
   let gameSeed = Date.now();
   let actionHistory = [];
   let game = new Game({ maxDay: 30, seed: gameSeed });
   let playReport = null;
+  let intelViews = [];
   let selectedIntelCity = 'busan';
   let toastTimer = null;
 
@@ -45,6 +47,36 @@
     node.textContent = hasSave ? `저장됨 · Day ${game.day}` : '저장 없음';
   }
 
+  function storeIntelViews() {
+    try {
+      localStorage.setItem(INTEL_VIEW_KEY, JSON.stringify({ seed: gameSeed, views: intelViews }));
+    } catch (error) {
+      console.warn('Merchant Globe market-view log save failed:', error);
+    }
+  }
+
+  function restoreIntelViews() {
+    intelViews = [];
+    try {
+      const raw = localStorage.getItem(INTEL_VIEW_KEY);
+      if (!raw) return;
+      const saved = JSON.parse(raw);
+      if (String(saved.seed) === String(gameSeed) && Array.isArray(saved.views)) {
+        intelViews = saved.views.slice(-500);
+      }
+    } catch (error) {
+      console.warn('Merchant Globe market-view log restore failed:', error);
+    }
+  }
+
+  function trackIntelView(targetCityId) {
+    const entry = ReportSystem.captureIntelView(game, targetCityId);
+    entry.viewedAt = new Date().toISOString();
+    intelViews.push(entry);
+    intelViews = intelViews.slice(-500);
+    storeIntelViews();
+  }
+
   function refreshPlayReport() {
     try {
       playReport = ReportSystem.buildReport({
@@ -69,7 +101,8 @@
         exportVersion: 1,
         exportedAt: new Date().toISOString(),
         report: playReport,
-        actions: actionHistory
+        actions: actionHistory,
+        intelViews
       };
       const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' });
       const url = URL.createObjectURL(blob);
@@ -140,6 +173,8 @@
   function deleteSavedGame() {
     try {
       localStorage.removeItem(SAVE_KEY);
+      localStorage.removeItem(INTEL_VIEW_KEY);
+      intelViews = [];
       updateSaveStatus(false);
       showToast('저장 데이터를 삭제했습니다. 다음 거래부터 다시 자동저장됩니다.');
     } catch (error) {
@@ -306,6 +341,7 @@
       button.innerHTML = `<strong>${city.name}</strong><span>${city.id === game.cityId ? '현재 · 실시간' : '원격'}</span>`;
       button.addEventListener('click', () => {
         selectedIntelCity = city.id;
+        trackIntelView(city.id);
         renderIntel();
         saveGame(false);
       });
@@ -490,7 +526,8 @@
       '<div><span>총 운송비</span><strong>' + money(stats.transportCost) + '</strong></div>' +
       '<div><span>매입·판매 물량</span><strong>' + (stats.unitsBought + stats.unitsSold) + '개</strong></div>' +
       '<div><span>도시 방문</span><strong>' + Object.keys(report.cityVisits).length + '곳</strong></div>' +
-      '<div><span>업그레이드</span><strong>화물 ' + report.upgrades.cargo + ' · 정보 ' + report.upgrades.intel + '</strong></div>';
+      '<div><span>업그레이드</span><strong>화물 ' + report.upgrades.cargo + ' · 정보 ' + report.upgrades.intel + '</strong></div>' +
+      '<div><span>원격 시장 조회</span><strong>' + intelViews.filter((row) => row.targetCityId !== row.fromCityId).length + '회</strong></div>';
 
     const best = report.bestSale;
     const worst = report.worstSale;
@@ -565,6 +602,8 @@
     actionHistory = [];
     game = new Game({ maxDay: 30, seed: gameSeed });
     selectedIntelCity = 'busan';
+    intelViews = [];
+    storeIntelViews();
     refreshPlayReport();
     el('newsTitle').textContent = '시장 정보';
     el('newsText').textContent = '도시 생산·소비, 상품 특성, 항로 상태를 함께 보세요. 같은 가격 차이도 상황에 따라 수익성이 달라집니다.';
@@ -597,6 +636,7 @@
 
   const restored = loadSavedGame();
   if (!restored) saveGame(false);
+  restoreIntelViews();
   refreshPlayReport();
   render();
 
