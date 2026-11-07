@@ -118,6 +118,23 @@ test('현재 플레이어에게 보이는 사건만 기록하고 원격 내부 �
   assert.ok(exported.includes('"timeline"'));
 });
 
+test('시세 조회 기록은 실제 공개 정보만 담고 게임 상태를 변경하지 않는다', () => {
+  const game = new Game({ seed: 'intel-view-read-only' });
+  const before = game.snapshot();
+  const remote = Report.captureIntelView(game, 'shanghai');
+  const local = Report.captureIntelView(game, 'seoul');
+
+  assert.equal(remote.type, 'intel_view');
+  assert.equal(remote.targetCityId, 'shanghai');
+  assert.equal(remote.intelLevel, 0);
+  assert.equal(remote.live, false);
+  assert.equal(remote.entries.length, 0);
+  assert.equal(local.live, true);
+  assert.equal(local.entries.length, 12);
+  assert.ok(local.entries.every((entry) => Number.isFinite(entry.price)));
+  assert.deepEqual(game.snapshot(), before);
+});
+
 test('항로 왕복 집계는 방향을 구분하지 않는다', () => {
   assert.equal(Report.pairKey('seoul', 'busan'), 'busan<->seoul');
   assert.equal(Report.pairKey('busan', 'seoul'), 'busan<->seoul');
