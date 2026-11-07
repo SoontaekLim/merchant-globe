@@ -22,6 +22,27 @@
     return [...lastByDay.values()].sort((a, b) => a.day - b.day);
   }
 
+  function captureIntelView(game, targetCityId) {
+    const intel = game.remoteIntel(targetCityId);
+    return {
+      type: 'intel_view',
+      day: game.day,
+      fromCityId: game.cityId,
+      targetCityId,
+      intelLevel: game.intelLevel,
+      live: intel.live,
+      entries: intel.entries.map((entry) => ({
+        productId: entry.productId,
+        price: entry.price,
+        stockLabel: entry.stockLabel,
+        demandLabel: entry.demandLabel,
+        capturedDay: entry.capturedDay,
+        age: entry.age,
+        trend: entry.trend
+      }))
+    };
+  }
+
   function buildReport(options, GameClass, SaveSystem) {
     const opts = options || {};
     if (!GameClass || !SaveSystem || typeof SaveSystem.applyAction !== 'function') {
@@ -180,7 +201,7 @@
     };
   }
 
-  const api = { REPORT_VERSION, pairKey, dailySamples, buildReport };
+  const api = { REPORT_VERSION, pairKey, dailySamples, captureIntelView, buildReport };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   global.MerchantGlobeReport = api;
 })(typeof window !== 'undefined' ? window : globalThis);
