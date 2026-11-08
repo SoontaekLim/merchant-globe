@@ -16,6 +16,7 @@
   let intelViews = [];
   let tradeControls = [];
   let selectedQuantityMode = 'preset_1';
+  let plannedDestinationId = null;
   let selectedIntelCity = 'busan';
   let toastTimer = null;
 
@@ -252,8 +253,43 @@
     refreshTradeQuotes();
   }
 
+  function renderRouteBudget() {
+    const routes = Object.keys(CITIES)
+      .filter((id) => id !== game.cityId)
+      .map((id) => ({ cityId: id, route: game.routeInfo(game.cityId, id) }))
+      .filter((row) => Boolean(row.route))
+      .sort((a, b) => a.route.cost - b.route.cost || a.cityId.localeCompare(b.cityId));
+
+    if (!routes.some((row) => row.cityId === plannedDestinationId)) {
+      plannedDestinationId = routes.length ? routes[0].cityId : null;
+    }
+    const select = el('routeBudgetCity');
+    select.replaceChildren();
+    routes.forEach(({ cityId, route }) => {
+      const option = document.createElement('option');
+      option.value = cityId;
+      option.textContent = CITIES[cityId].name + ' · ' + money(route.cost);
+      select.appendChild(option);
+    });
+    select.disabled = !routes.length;
+    if (plannedDestinationId) select.value = plannedDestinationId;
+
+    const chosen = routes.find((row) => row.cityId === plannedDestinationId);
+    const description = el('routeBudgetSummary');
+    if (!chosen) {
+      description.textContent = '현재 이동 가능한 항로가 없습니다.';
+      return;
+    }
+    const remaining = game.cash - chosen.route.cost;
+    description.textContent = '현재 현금 ' + money(game.cash) + ' · ' + CITIES[chosen.cityId].name +
+      ' 운송비 ' + money(chosen.route.cost) + ' (' + chosen.route.days + '일) · ' +
+      (remaining >= 0 ? '이동비 제외 매입 예산 ' + money(remaining) : '이동비 부족 ' + money(-remaining));
+    description.classList.toggle('insufficient', remaining < 0);
+  }
+
   function refreshTradeQuotes() {
     const qty = TradeUX.normalizeQuantity(el('tradeQty').value);
+    const reserve = el('keepTravelCost').checked;
     [['qtyOneBtn', 1], ['qtyFiveBtn', 5], ['qtyTenBtn', 10]].forEach(([id, amount]) => {
       const button = el(id);
       const active = selectedQuantityMode === 'preset_' + amount && amount === qty;
@@ -261,56 +297,98 @@
       button.classList.toggle('active', active);
     });
 
-    el('marketBody').querySelectorAll('tr[data-product-id]').forEach((tr) => {
-      const productId = tr.dataset.productId;
+    el('marketBody').querySelectorAll('.market-product-card[data-product-id]').forEach((card) => {
+      const productId = card.dataset.productId;
       const product = game.getProduct(productId);
-      const quote = TradeUX.quote(game, productId, qty);
-      const buy = tr.querySelector('.buy-button');
-      const buyMax = tr.querySelector('.buy-max-button');
-      const sell = tr.querySelector('.sell-button');
-      const sellAll = tr.querySelector('.sell-all-button');
-      const buyPreview = tr.querySelector('.buy-preview');
-      const sellPreview = tr.querySelector('.sell-preview');
+      const plan = TradeUX.tradeBudget(game, productId, qty, plannedDestinationId);
+      const maxQty = reserve ? plan.maxWithTransport : plan.maxWithoutTransport;
+      const buy = card.querySelector('.buy-button');
+      const maxBuy = card.querySelector('.buy-max-button');
+      const sell = card.querySelector('.sell-button');
+      const sellAll = card.querySelector('.sell-all-button');
+      const buyPreview = card.querySelector('.buy-preview');
+      const buyBalance = card.querySelector('.buy-balance');
+      const buyTravel = card.querySelector('.buy-travel');
+      const maxPreview = card.querySelector('.max-preview');
+      const sellPreview = card.querySelector('.sell-preview');
+      const sellBalance = card.querySelector('.sell-balance');
 
-      buy.disabled = !quote.buy.allowed;
-      sell.disabled = !quote.sell.allowed;
-      buyMax.disabled = quote.buy.maxQuantity === 0;
-      sellAll.disabled = quote.sell.maxQuantity === 0;
+      buy.disabled = !plan.buy.allowed;
+      sell.disabled = !plan.sell.allowed;
+      maxBuy.disabled = maxQty <= 0;
+      sellAll.disabled = plan.sell.maxQuantity <= 0;
 
       buy.textContent = '매입 ' + qty + '개';
       sell.textContent = '판매 ' + qty + '개';
-      buyMax.textContent = '최대 ' + quote.buy.maxQuantity + '개';
-      sellAll.textContent = '전량 ' + quote.sell.maxQuantity + '개';
-      buyMax.setAttribute('aria-label', product.name + ' 최대 ' + quote.buy.maxQuantity + '개 매입');
-      sellAll.setAttribute('aria-label', product.name + ' 전량 ' + quote.sell.maxQuantity + '개 판매');
+      maxBuy.textContent = (reserve ? '이동비 확보 최대 ' : '최대 매입 ') + maxQty + '개';
+      sellAll.textContent = '전량 판매 ' + plan.sell.maxQuantity + '개';
+      maxBuy.setAttribute('aria-label', product.name + ' ' + (reserve ? '이동비 확보 최대 ' : '최대 ') + maxQty + '개 매입');
+      sellAll.setAttribute('aria-label', product.name + ' 전량 ' + plan.sell.maxQuantity + '개 판매');
 
-      if (quote.buy.allowed) {
-        buyPreview.textContent = '매입 예상 ' + money(quote.buy.total) +
-          ' (평균 ' + money(quote.buy.unitPrice) + '/개)';
+      function setTravelLabel(element, afterTravel) {
+        if (afterTravel == null) {
+          element.textContent = '';
+          element.className = 'trade-preview-line';
+          return;
+        }
+        element.textContent = afterTravel >= 0
+          ? CITIES[plannedDestinationId].name + ' 이동 후 ' + money(afterTravel)
+          : CITIES[plannedDestinationId].name + ' 운송비 부족 ' + money(-afterTravel);
+        element.className = 'trade-preview-line ' + (afterTravel >= 0 ? 'positive' : 'negative');
+      }
+
+      if (plan.buy.allowed) {
+        buyPreview.textContent = '매입 예상 ' + money(plan.buy.total) +
+          ' · 평균 ' + money(plan.buy.unitPrice) + '/개';
         buyPreview.className = 'trade-preview-line buy-preview';
+        buyBalance.textContent = '매입 후 현금 ' + money(plan.buy.cashAfter);
+        setTravelLabel(buyTravel, plan.buy.cashAfterTransport);
       } else {
-        buyPreview.textContent = '매입 불가 · ' + (quote.buy.reason || '최대 ' + quote.buy.maxQuantity + '개');
+        buyPreview.textContent = '매입 불가 · ' + (plan.buy.reason || '수량 초과');
         buyPreview.className = 'trade-preview-line buy-preview unavailable';
-      }
-      if (quote.sell.allowed) {
-        sellPreview.textContent = '판매 예상 ' + money(quote.sell.revenue) +
-          ' · 손익 ' + signedMoney(quote.sell.profit);
-        sellPreview.className = 'trade-preview-line sell-preview';
-      } else {
-        sellPreview.textContent = '판매 불가 · ' + (quote.sell.reason || '보유 수량 부족');
-        sellPreview.className = 'trade-preview-line sell-preview unavailable';
+        buyBalance.textContent = '';
+        setTravelLabel(buyTravel, null);
       }
 
-      if (quote.buy.maxQuantity > 0) {
-        const maxBuy = TradeUX.quote(game, productId, quote.buy.maxQuantity);
-        buyMax.title = '예상 매입 총액 ' + money(maxBuy.buy.total);
+      if (maxQty > 0) {
+        const maxQuote = TradeUX.quote(game, productId, maxQty).buy;
+        const afterBuy = game.cash - maxQuote.total;
+        const afterTravel = afterBuy - plan.route.cost;
+        maxPreview.textContent = maxQty + '개 매입 ' + money(maxQuote.total) +
+          ' → 현금 ' + money(afterBuy) +
+          (afterTravel >= 0 ? ' → 이동 후 ' + money(afterTravel)
+            : ' → 이동비 부족 ' + money(-afterTravel));
+        maxPreview.className = 'trade-preview-line max-preview ' + (afterTravel >= 0 ? '' : 'negative');
+        maxBuy.title = maxPreview.textContent;
       } else {
-        buyMax.title = quote.buy.reason || '매입 불가';
+        maxPreview.textContent = reserve && plan.maxWithoutTransport > 0
+          ? '이동비를 확보하면서 살 수 있는 수량이 없습니다. 목적지 또는 확보 옵션을 변경하세요.'
+          : '매입 가능한 수량이 없습니다.';
+        maxPreview.className = 'trade-preview-line max-preview unavailable';
+        maxBuy.title = maxPreview.textContent;
       }
-      if (quote.sell.maxQuantity > 0) {
-        const allSell = TradeUX.quote(game, productId, quote.sell.maxQuantity);
-        sellAll.title = '예상 판매 ' + money(allSell.sell.revenue) +
-          ' · 실현손익 ' + signedMoney(allSell.sell.profit);
+
+      if (plan.sell.allowed) {
+        sellPreview.textContent = '판매 예상 ' + money(plan.sell.revenue) +
+          ' · 실현손익 ' + signedMoney(plan.sell.profit);
+        sellPreview.className = 'trade-preview-line sell-preview';
+        sellBalance.textContent = '판매 후 현금 ' + money(plan.sell.cashAfter) +
+          ' · ' + CITIES[plannedDestinationId].name + ' 이동 후 ' +
+          (plan.sell.cashAfterTransport >= 0 ? money(plan.sell.cashAfterTransport)
+            : '운송비 부족 ' + money(-plan.sell.cashAfterTransport));
+        sellBalance.className = 'trade-preview-line sell-balance ' +
+          (plan.sell.cashAfterTransport >= 0 ? '' : 'negative');
+      } else {
+        sellPreview.textContent = '판매 불가 · ' + (plan.sell.reason || '보유 수량 부족');
+        sellPreview.className = 'trade-preview-line sell-preview unavailable';
+        sellBalance.textContent = '';
+      }
+
+      if (plan.sell.maxQuantity > 0) {
+        const allQuote = TradeUX.quote(game, productId, plan.sell.maxQuantity).sell;
+        const after = game.cash + allQuote.revenue;
+        sellAll.title = '전량 판매 후 현금 ' + money(after) +
+          ' · 이동 후 ' + money(after - plan.route.cost);
       } else {
         sellAll.title = '판매할 재고가 없습니다';
       }
