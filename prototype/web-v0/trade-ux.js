@@ -119,6 +119,9 @@
     if ((['max_buy', 'reserve_max_buy'].includes(opts.control) && opts.side !== 'buy') || (opts.control === 'sell_all' && opts.side !== 'sell')) {
       throw new Error('거래 입력 방식과 거래 유형이 일치하지 않습니다.');
     }
+    if (opts.surface != null && !['market', 'cargo'].includes(opts.surface)) {
+      throw new Error('알 수 없는 거래 위치입니다.');
+    }
 
     return {
       type: 'trade_control',
@@ -128,7 +131,8 @@
       side: opts.side,
       productId: opts.productId,
       quantity: opts.quantity,
-      control: opts.control
+      control: opts.control,
+      surface: opts.surface || 'market'
     };
   }
 
