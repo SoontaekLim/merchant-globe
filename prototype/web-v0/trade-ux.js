@@ -10,6 +10,54 @@
     return Math.max(1, Math.min(MAX_INPUT_QUANTITY, Math.floor(number)));
   }
 
+  function maxBuyWithinBudget(game, productId, availableCash) {
+    const product = game.getProduct(productId);
+    if (!product) throw new Error('존재하지 않는 상품입니다.');
+    if (game.gameOver) return 0;
+
+    const budget = Math.max(0, Number(availableCash) || 0);
+    const stock = Math.max(0, Math.floor(game.getMarketState(game.cityId, productId).stock));
+    const availableSlots = Math.max(0, game.capacity - game.cargoUsed());
+    const maxByCargo = Math.floor(availableSlots / (product.cargoSize || 1));
+    let low = 0;
+    let high = Math.min(stock, maxByCargo, MAX_INPUT_QUANTITY);
+
+    while (low < high) {
+      const middle = Math.ceil((low + high) / 2);
+      const cost = game.executionPrice(game.cityId, productId, middle, 'buy') * middle;
+      if (cost <= budget) low = middle;
+      else high = middle - 1;
+    }
+    return low;
+  }
+
+  function tradeBudget(game, productId, quantity, destinationId) {
+    const route = game.routeInfo(game.cityId, destinationId);
+    if (!route) throw new Error('운송비를 계산할 항로가 없습니다.');
+    const estimate = quote(game, productId, quantity);
+    const maxWithTransport = maxBuyWithinBudget(game, productId, game.cash - route.cost);
+    const maxWithoutTransport = estimate.buy.maxQuantity;
+    const buyCashAfter = estimate.buy.allowed ? game.cash - estimate.buy.total : null;
+    const sellCashAfter = estimate.sell.allowed ? game.cash + estimate.sell.revenue : null;
+
+    return {
+      route: { from: route.from, to: route.to, cost: route.cost, days: route.days },
+      cashBefore: game.cash,
+      buy: {
+        ...estimate.buy,
+        cashAfter: buyCashAfter,
+        cashAfterTransport: buyCashAfter == null ? null : buyCashAfter - route.cost
+      },
+      sell: {
+        ...estimate.sell,
+        cashAfter: sellCashAfter,
+        cashAfterTransport: sellCashAfter == null ? null : sellCashAfter - route.cost
+      },
+      maxWithoutTransport,
+      maxWithTransport
+    };
+  }
+
   function quote(game, productId, requestedQuantity) {
     const product = game.getProduct(productId);
     if (!product) throw new Error('존재하지 않는 상품입니다.');
@@ -19,19 +67,7 @@
     const freeSlots = Math.max(0, game.capacity - game.cargoUsed());
     const cargoSize = product.cargoSize || 1;
     const maxByCargo = Math.floor(freeSlots / cargoSize);
-    const maxByStockCargo = Math.min(availableStock, maxByCargo, MAX_INPUT_QUANTITY);
-
-    // The purchase unit price rises with market impact as the lot grows.
-    // Binary search, rather than cash / current unit price, finds the actual affordable lot.
-    let low = 0;
-    let high = maxByStockCargo;
-    while (low < high) {
-      const middle = Math.ceil((low + high) / 2);
-      const cost = game.executionPrice(game.cityId, productId, middle, 'buy') * middle;
-      if (cost <= game.cash) low = middle;
-      else high = middle - 1;
-    }
-    const maxBuy = game.gameOver ? 0 : low;
+    const maxBuy = maxBuyWithinBudget(game, productId, game.cash);
     const maxSell = game.gameOver ? 0 : Math.max(0, Math.floor(game.inventory[productId].qty));
 
     const buyAllowed = qty <= maxBuy;
@@ -70,7 +106,7 @@
   }
 
   const CONTROL_MODES = Object.freeze([
-    'preset_1', 'preset_5', 'preset_10', 'custom', 'max_buy', 'sell_all'
+    'preset_1', 'preset_5', 'preset_10', 'custom', 'max_buy', 'reserve_max_buy', 'sell_all'
   ]);
 
   function createControlEntry(options) {
@@ -80,7 +116,7 @@
     if (!Number.isInteger(opts.actionIndex) || opts.actionIndex < 1) throw new Error('거래 행동 위치가 올바르지 않습니다.');
     if (!Number.isInteger(opts.quantity) || opts.quantity < 1) throw new Error('거래 수량이 올바르지 않습니다.');
     if (typeof opts.productId !== 'string' || !opts.productId) throw new Error('상품 ID가 올바르지 않습니다.');
-    if ((opts.control === 'max_buy' && opts.side !== 'buy') || (opts.control === 'sell_all' && opts.side !== 'sell')) {
+    if ((['max_buy', 'reserve_max_buy'].includes(opts.control) && opts.side !== 'buy') || (opts.control === 'sell_all' && opts.side !== 'sell')) {
       throw new Error('거래 입력 방식과 거래 유형이 일치하지 않습니다.');
     }
 
@@ -105,7 +141,7 @@
       const action = (actions || [])[entry.actionIndex - 1];
       if (!action || !['buy', 'sell'].includes(action.type)) continue;
       if (action.type !== entry.side || action.productId !== entry.productId || action.qty !== entry.quantity) continue;
-      if ((entry.control === 'max_buy' && entry.side !== 'buy') || (entry.control === 'sell_all' && entry.side !== 'sell')) continue;
+      if ((['max_buy', 'reserve_max_buy'].includes(entry.control) && entry.side !== 'buy') || (entry.control === 'sell_all' && entry.side !== 'sell')) continue;
       counts[entry.control]++;
       validEntries.push(entry);
       seen.add(entry.actionIndex);
@@ -120,7 +156,7 @@
     };
   }
 
-  const api = { MAX_INPUT_QUANTITY, normalizeQuantity, quote, CONTROL_MODES, createControlEntry, summarizeControls };
+  const api = { MAX_INPUT_QUANTITY, normalizeQuantity, quote, maxBuyWithinBudget, tradeBudget, CONTROL_MODES, createControlEntry, summarizeControls };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   global.MerchantGlobeTradeUX = api;
 })(typeof window !== 'undefined' ? window : globalThis);
