@@ -79,3 +79,30 @@
   .rt-new-speed select { width: 100%; }
   .rt-market-list { grid-template-columns: 1fr; }
 }
+
+/* v0.6.1: bounded daily / weekly realized trading ledger. */
+.rt-history-section { margin: 14px 0; min-width: 0; }
+.rt-history-heading { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; align-items: center; }
+.rt-history-heading h3 { font-size: .94rem; margin: 0; }
+.rt-history-heading label { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: .73rem; }
+.rt-history-heading select {
+  min-height: 36px; color: var(--text); background: var(--bg);
+  border: 1px solid var(--border); padding: 5px 8px; border-radius: 9px;
+}
+.rt-history-help { margin: 7px 0 9px; color: var(--muted); font-size: .7rem; line-height: 1.5; }
+.rt-performance-history { display: grid; gap: 5px; max-height: 430px; overflow-y: auto; }
+.rt-history-row {
+  display: grid; grid-template-columns: minmax(82px,.7fr) minmax(110px,2.5fr) auto;
+  gap: 8px; align-items: center; min-width: 0;
+  border: 1px solid rgba(34,53,82,.65); background: rgba(7,17,31,.43);
+  padding: 8px; border-radius: 9px; font-variant-numeric: tabular-nums;
+}
+.rt-history-period { font-size: .74rem; color: var(--text); }
+.rt-history-detail { color: var(--muted); font-size: .69rem; line-height: 1.35; overflow-wrap: anywhere; }
+.rt-history-net { font-size: .77rem; text-align: right; white-space: nowrap; }
+.rt-history-net.positive { color: var(--positive); }
+.rt-history-net.negative { color: var(--danger); }
+@media (max-width: 540px) {
+  .rt-history-row { grid-template-columns: minmax(0,1fr) auto; }
+  .rt-history-detail { grid-column: 1 / -1; grid-row: 2; }
+}
