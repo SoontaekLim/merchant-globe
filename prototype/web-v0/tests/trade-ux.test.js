@@ -113,4 +113,65 @@ test('대량 매입과 전량 판매도 기존 저장 재생과 호환된다', (
   assert.deepEqual(restored.game.snapshot(), original.snapshot());
 });
 
+test('거래 입력 방식은 1·5·10개, 직접 입력, 최대 매입, 전량 판매를 구분한다', () => {
+  const actions = [
+    { type: 'buy', productId: 'rice', qty: 10 },
+    { type: 'buy', productId: 'tea', qty: 3 },
+    { type: 'sell', productId: 'rice', qty: 10 },
+    { type: 'buy', productId: 'ginseng', qty: 5 },
+    { type: 'sell', productId: 'ginseng', qty: 5 }
+  ];
+  const modes = ['preset_10', 'custom', 'sell_all', 'max_buy', 'preset_5'];
+  const entries = actions.map((action, i) => TradeUX.createControlEntry({
+    actionIndex: i + 1, day: 1, cityId: 'seoul',
+    side: action.type, productId: action.productId, quantity: action.qty, control: modes[i]
+  }));
+  const summary = TradeUX.summarizeControls(actions, entries);
+  assert.equal(summary.totalTrades, 5);
+  assert.equal(summary.trackedTrades, 5);
+  assert.equal(summary.untrackedTrades, 0);
+  for (const mode of modes) assert.equal(summary.counts[mode], 1);
+  assert.equal(summary.counts.preset_1, 0);
+});
+
+test('과거 저장 거래는 사용 버튼을 추측하지 않고 미분류로 집계한다', () => {
+  const actions = [
+    { type: 'buy', productId: 'rice', qty: 5 },
+    { type: 'travel', destinationId: 'busan' },
+    { type: 'sell', productId: 'rice', qty: 5 }
+  ];
+  const entry = TradeUX.createControlEntry({
+    actionIndex: 3, day: 2, cityId: 'busan',
+    side: 'sell', productId: 'rice', quantity: 5, control: 'sell_all'
+  });
+  const summary = TradeUX.summarizeControls(actions, [entry]);
+  assert.equal(summary.totalTrades, 2);
+  assert.equal(summary.trackedTrades, 1);
+  assert.equal(summary.untrackedTrades, 1);
+  assert.equal(summary.counts.sell_all, 1);
+});
+
+test('거래 입력 기록의 중복·변조·잘못된 행동 위치는 집계하지 않는다', () => {
+  const actions = [{ type: 'buy', productId: 'tea', qty: 10 }];
+  const good = TradeUX.createControlEntry({
+    actionIndex: 1, day: 1, cityId: 'seoul', side: 'buy',
+    productId: 'tea', quantity: 10, control: 'preset_10'
+  });
+  const summary = TradeUX.summarizeControls(actions, [
+    { ...good, actionIndex: 999 },
+    { ...good, quantity: 5 },
+    { ...good, side: 'sell' },
+    good,
+    { ...good, control: 'max_buy' },
+    good
+  ]);
+  assert.equal(summary.trackedTrades, 1);
+  assert.equal(summary.entries[0].control, 'preset_10');
+  assert.equal(summary.counts.preset_10, 1);
+  assert.equal(summary.untrackedTrades, 0);
+
+  assert.throws(() => TradeUX.createControlEntry({ ...good, control: 'not_known' }));
+  assert.throws(() => TradeUX.createControlEntry({ ...good, control: 'sell_all' }));
+});
+
 console.log('\nAll Merchant Globe trade UX tests passed.');
