@@ -7,6 +7,10 @@
   const DEFAULT_MS_PER_DAY = 60000;
   const MAX_ADVANCE_TICKS = 100000;
   const MAX_ACTIONS = 100000;
+  const CHECKPOINT_ACTION_INTERVAL = 48;
+  const CHECKPOINT_DAY_INTERVAL = 28;
+  const DAILY_HISTORY_LIMIT = 180;
+  const WEEKLY_HISTORY_LIMIT = 52;
   const UNLIMITED_DAY = Number.MAX_SAFE_INTEGER;
   const TYPES = Object.freeze(['buy', 'sell', 'upgradeCargo', 'upgradeIntel', 'startTravel', 'setSpeed']);
 
@@ -16,6 +20,35 @@
       throw new Error(label + ' 값이 올바르지 않습니다.');
     }
     return value;
+  }
+
+  function emptyPerformance(period, index) {
+    const startDay = period === 'week' ? (index - 1) * 7 + 1 : index;
+    return {
+      period, index, startDay,
+      endDay: period === 'week' ? startDay + 6 : index,
+      buys: 0, sells: 0, trips: 0,
+      unitsBought: 0, unitsSold: 0,
+      realizedProfit: 0, transportCost: 0, investmentCost: 0, netProfit: 0
+    };
+  }
+
+  function validateHistory(rows, period, limit) {
+    if (!Array.isArray(rows) || rows.length > limit) throw new Error('손익 집계 기록이 올바르지 않습니다.');
+    let previousIndex = 0;
+    for (const row of rows) {
+      if (!row || row.period !== period) throw new Error('손익 집계 단위가 올바르지 않습니다.');
+      integer(row.index, '손익 집계 기간', previousIndex + 1);
+      const expected = emptyPerformance(period, row.index);
+      if (row.startDay !== expected.startDay || row.endDay !== expected.endDay) {
+        throw new Error('손익 집계 날짜가 올바르지 않습니다.');
+      }
+      for (const key of ['buys', 'sells', 'trips', 'unitsBought', 'unitsSold',
+        'realizedProfit', 'transportCost', 'investmentCost', 'netProfit']) {
+        if (!Number.isFinite(row[key])) throw new Error('손익 집계 금액이 올바르지 않습니다.');
+      }
+      previousIndex = row.index;
+    }
   }
 
   class RealtimeSession {
@@ -35,6 +68,11 @@
       this.game = new opts.GameClass({ seed: this.seed, maxDay: UNLIMITED_DAY });
       this.transit = null;
       this.actions = [];
+      this.archivedActions = 0;
+      this.checkpoint = null;
+      this.dailyHistory = [];
+      this.weeklyHistory = [];
+      this.investmentTotal = 0;
     }
 
     nextTickAtMs() {
@@ -107,6 +145,96 @@
       return { oldMsPerDay: previous, msPerDay: next };
     }
 
+    recordPerformance(type, data, result) {
+      if (type === 'setSpeed') return;
+      const day = this.game.day;
+      const week = Math.floor((day - 1) / 7) + 1;
+      const delta = emptyPerformance('day', day);
+      if (type === 'buy') {
+        delta.buys = 1;
+        delta.unitsBought = data.qty;
+      } else if (type === 'sell') {
+        delta.sells = 1;
+        delta.unitsSold = data.qty;
+        delta.realizedProfit = result.profit;
+      } else if (type === 'startTravel') {
+        delta.trips = 1;
+        delta.transportCost = result.cost;
+      } else if (type === 'upgradeCargo' || type === 'upgradeIntel') {
+        delta.investmentCost = result.cost;
+        this.investmentTotal += result.cost;
+      }
+      delta.netProfit = delta.realizedProfit - delta.transportCost - delta.investmentCost;
+
+      const apply = (rows, period, index, limit) => {
+        let row = rows[rows.length - 1];
+        if (!row || row.index !== index) {
+          row = emptyPerformance(period, index);
+          rows.push(row);
+          while (rows.length > limit) rows.shift();
+        }
+        for (const key of ['buys', 'sells', 'trips', 'unitsBought', 'unitsSold',
+          'realizedProfit', 'transportCost', 'investmentCost', 'netProfit']) {
+          row[key] += delta[key];
+        }
+      };
+      apply(this.dailyHistory, 'day', day, DAILY_HISTORY_LIMIT);
+      apply(this.weeklyHistory, 'week', week, WEEKLY_HISTORY_LIMIT);
+    }
+
+    recentPerformance(period, limit) {
+      if (period !== 'day' && period !== 'week') throw new Error('지원하지 않는 손익 집계 기간입니다.');
+      const count = integer(limit == null ? 8 : limit, '조회 기간', 1, 52);
+      const nowIndex = period === 'day' ? this.game.day : Math.floor((this.game.day - 1) / 7) + 1;
+      const source = period === 'day' ? this.dailyHistory : this.weeklyHistory;
+      const byIndex = new Map(source.map((row) => [row.index, row]));
+      const result = [];
+      for (let index = Math.max(1, nowIndex - count + 1); index <= nowIndex; index++) {
+        result.push(clone(byIndex.get(index) || emptyPerformance(period, index)));
+      }
+      return result;
+    }
+
+    performanceTotals() {
+      return {
+        realizedProfit: this.game.stats.realizedProfit,
+        transportCost: this.game.stats.transportCost,
+        investmentCost: this.investmentTotal,
+        netProfit: this.game.stats.realizedProfit - this.game.stats.transportCost - this.investmentTotal,
+        recordedDays: this.dailyHistory.length,
+        recordedWeeks: this.weeklyHistory.length
+      };
+    }
+
+    // Compact the action tail only after saving the exact economy state and
+    // RNG position. Older actions are intentionally summarized, not replayed.
+    checkpointNow() {
+      if (typeof this.game.exportCheckpoint !== 'function') {
+        throw new Error('경제 엔진이 체크포인트 저장을 지원하지 않습니다.');
+      }
+      this.archivedActions += this.actions.length;
+      this.checkpoint = {
+        atMs: this.nowMs,
+        archivedActions: this.archivedActions,
+        msPerDay: this.msPerDay,
+        clockEpochMs: this.clockEpochMs,
+        clockEpochDay: this.clockEpochDay,
+        transit: this.transit ? clone(this.transit) : null,
+        economy: this.game.exportCheckpoint(),
+        dailyHistory: clone(this.dailyHistory),
+        weeklyHistory: clone(this.weeklyHistory),
+        investmentTotal: this.investmentTotal
+      };
+      this.actions = [];
+      return this.checkpoint;
+    }
+
+    maybeCheckpoint() {
+      const checkpointDay = this.checkpoint ? this.checkpoint.economy.day : 1;
+      if (this.actions.length >= CHECKPOINT_ACTION_INTERVAL ||
+          this.game.day - checkpointDay >= CHECKPOINT_DAY_INTERVAL) this.checkpointNow();
+    }
+
     tradeQuote(productId, quantity) {
       return {
         buy: this.game.executionPrice(this.game.cityId, productId, quantity, 'buy') * quantity,
@@ -166,10 +294,12 @@
       }
 
       this.actions.push(action);
+      this.recordPerformance(type, payload, result);
       return result;
     }
 
     toSave() {
+      this.maybeCheckpoint();
       return {
         schemaVersion: SAVE_SCHEMA_VERSION,
         mode: 'realtime',
@@ -178,6 +308,8 @@
         observedAtMs: this.nowMs,
         msPerDay: this.initialMsPerDay,
         activeMsPerDay: this.msPerDay,
+        archivedActionCount: this.archivedActions,
+        checkpoint: this.checkpoint ? clone(this.checkpoint) : null,
         actions: clone(this.actions)
       };
     }
@@ -192,8 +324,36 @@
     integer(payload.observedAtMs, '저장 시각', payload.startedAtMs);
     integer(payload.msPerDay, '경제 갱신 간격', 1, 86400000);
     if (payload.activeMsPerDay != null) integer(payload.activeMsPerDay, '현재 경제 갱신 간격', 1, 86400000);
+    if (payload.archivedActionCount != null) integer(payload.archivedActionCount, '압축된 행동 수', 0);
+    const cp = payload.checkpoint;
+    if (cp != null) {
+      if (!cp || typeof cp !== 'object') throw new Error('체크포인트가 올바르지 않습니다.');
+      integer(cp.atMs, '체크포인트 시각', payload.startedAtMs, payload.observedAtMs);
+      integer(cp.archivedActions, '압축된 행동 수', 0);
+      if (payload.archivedActionCount != null && payload.archivedActionCount !== cp.archivedActions) {
+        throw new Error('저장된 행동 수와 체크포인트가 일치하지 않습니다.');
+      }
+      integer(cp.msPerDay, '체크포인트 속도', 1, 86400000);
+      integer(cp.clockEpochMs, '체크포인트 시계 기준', 0);
+      integer(cp.clockEpochDay, '체크포인트 경제 기준', 1);
+      if (!cp.economy || !Number.isSafeInteger(cp.economy.day) || cp.economy.day < cp.clockEpochDay ||
+          cp.economy.day > Number.MAX_SAFE_INTEGER - 1000) {
+        throw new Error('체크포인트 경제 날짜가 올바르지 않습니다.');
+      }
+      if (cp.transit != null && (!cp.transit.from || !cp.transit.to ||
+          !Number.isSafeInteger(cp.transit.arriveAtMs) || cp.transit.arriveAtMs <= cp.atMs)) {
+        throw new Error('체크포인트 운송 기록이 올바르지 않습니다.');
+      }
+      validateHistory(cp.dailyHistory, 'day', DAILY_HISTORY_LIMIT);
+      validateHistory(cp.weeklyHistory, 'week', WEEKLY_HISTORY_LIMIT);
+      if (!Number.isFinite(cp.investmentTotal) || cp.investmentTotal < 0) {
+        throw new Error('체크포인트 성장 투자비가 올바르지 않습니다.');
+      }
+    } else if (payload.archivedActionCount) {
+      throw new Error('압축된 행동의 체크포인트가 없습니다.');
+    }
     if (!Array.isArray(payload.actions) || payload.actions.length > MAX_ACTIONS) throw new Error('행동 기록이 올바르지 않습니다.');
-    let lastTime = payload.startedAtMs;
+    let lastTime = cp ? cp.atMs : payload.startedAtMs;
     for (const action of payload.actions) {
       if (!action || !TYPES.includes(action.type)) throw new Error('저장된 행동 유형이 올바르지 않습니다.');
       integer(action.atMs, '행동 시각', lastTime, payload.observedAtMs);
@@ -216,6 +376,23 @@
       GameClass, seed: payload.seed,
       startedAtMs: payload.startedAtMs, msPerDay: payload.msPerDay
     });
+    if (payload.checkpoint) {
+      const cp = payload.checkpoint;
+      if (typeof session.game.restoreCheckpoint !== 'function') {
+        throw new Error('경제 엔진이 체크포인트 복원을 지원하지 않습니다.');
+      }
+      session.game.restoreCheckpoint(cp.economy);
+      session.nowMs = cp.atMs;
+      session.msPerDay = cp.msPerDay;
+      session.clockEpochMs = cp.clockEpochMs;
+      session.clockEpochDay = cp.clockEpochDay;
+      session.transit = cp.transit ? clone(cp.transit) : null;
+      session.dailyHistory = clone(cp.dailyHistory);
+      session.weeklyHistory = clone(cp.weeklyHistory);
+      session.investmentTotal = cp.investmentTotal;
+      session.archivedActions = cp.archivedActions;
+      session.checkpoint = clone(cp);
+    }
     payload.actions.forEach((action) => session.perform(action.type, action, action.atMs));
     if (payload.activeMsPerDay != null && session.msPerDay !== payload.activeMsPerDay) {
       throw new Error('저장된 경제 속도 변경 기록이 일치하지 않습니다.');
@@ -225,7 +402,9 @@
     return session;
   }
 
-  const api = { RealtimeSession, DEFAULT_MS_PER_DAY, SAVE_SCHEMA_VERSION, validateSave, restoreSave };
+  const api = { RealtimeSession, DEFAULT_MS_PER_DAY, SAVE_SCHEMA_VERSION,
+    CHECKPOINT_ACTION_INTERVAL, CHECKPOINT_DAY_INTERVAL, DAILY_HISTORY_LIMIT, WEEKLY_HISTORY_LIMIT,
+    validateSave, restoreSave };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   global.MerchantGlobeRealtime = api;
 })(typeof window !== 'undefined' ? window : globalThis);
