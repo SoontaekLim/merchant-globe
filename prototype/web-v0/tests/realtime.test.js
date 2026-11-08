@@ -255,4 +255,171 @@ test('기존 0.6 저장도 현재 속도 추가 필드 없이 복원되며 잘�
   assert.throws(() => RT.restoreSave(tampered, Game, 200000), /속도 변경 기록/);
 });
 
+test('경제 전체 체크포인트는 난수 위치·시장 가격·수산물 신선도를 정확히 복원한다', () => {
+  const s = create('snapshot-rng-economy', 1000);
+  s.perform('buy', { productId: 'fish', qty: 4 }, 100000);
+  s.advanceTo(113200);
+  const checkpoint = s.game.exportCheckpoint();
+  assert.equal(checkpoint.format, 1);
+  assert.ok(Number.isInteger(checkpoint.rngState));
+  assert.ok(checkpoint.market.seoul.tea > 0);
+  const rebuilt = new Game({ seed: 'snapshot-rng-economy', maxDay: Number.MAX_SAFE_INTEGER });
+  rebuilt.restoreCheckpoint(checkpoint);
+  assert.deepEqual(rebuilt.snapshot(), s.game.snapshot());
+  rebuilt.advanceEconomy(8);
+  s.game.advanceEconomy(8);
+  assert.deepEqual(rebuilt.snapshot(), s.game.snapshot());
+});
+
+test('체크포인트는 오래된 행동을 압축하고 남은 행동과 경제·운송 상태를 복원한다', () => {
+  const s = create('checkpoint-action-tail', 1000);
+  let totalActions = 0;
+  for (let i = 0; i < 70; i++) {
+    s.perform('buy', { productId: 'rice', qty: 1 }, 100010 + i * 900);
+    s.perform('sell', { productId: 'rice', qty: 1 }, 100015 + i * 900);
+    totalActions += 2;
+    s.toSave();
+  }
+  const save = s.toSave();
+  assert.ok(save.checkpoint, 'A full checkpoint should have been created');
+  assert.ok(save.archivedActionCount >= RT.CHECKPOINT_ACTION_INTERVAL);
+  assert.ok(save.actions.length < RT.CHECKPOINT_ACTION_INTERVAL);
+  assert.equal(save.archivedActionCount + save.actions.length, totalActions);
+  assert.equal(save.checkpoint.archivedActions, save.archivedActionCount);
+  assert.ok(JSON.stringify(save).length < 100000, 'Persisted save should be bounded');
+  const restored = RT.restoreSave(save, Game, s.nowMs);
+  assert.equal(restored.archivedActions, save.archivedActionCount);
+  assert.deepEqual(restored.actions, s.actions);
+  assert.deepEqual(restored.game.snapshot(), s.game.snapshot());
+  s.advanceTo(s.nowMs + 10000);
+  restored.advanceTo(s.nowMs);
+  assert.deepEqual(restored.game.snapshot(), s.game.snapshot());
+});
+
+test('한 달 동안 거래가 없어도 시간 기반 체크포인트로 긴 복원 재생을 줄인다', () => {
+  const s = create('checkpoint-clock-only', 1000);
+  s.advanceTo(100000 + 90 * 1000);
+  const save = s.toSave();
+  assert.equal(save.actions.length, 0);
+  assert.equal(save.checkpoint.economy.day, 91);
+  assert.equal(save.checkpoint.atMs, s.nowMs);
+  const restored = RT.restoreSave(save, Game, s.nowMs);
+  assert.deepEqual(restored.game.snapshot(), s.game.snapshot());
+  restored.advanceTo(s.nowMs + 5000);
+  s.advanceTo(s.nowMs + 5000);
+  assert.deepEqual(restored.game.snapshot(), s.game.snapshot());
+});
+
+test('운송 중 속도 변경과 체크포인트는 재접속 후 정확한 도착시각을 유지한다', () => {
+  const s = create('checkpoint-ship-speed', 60000);
+  s.perform('buy', { productId: 'paper', qty: 4 }, 100010);
+  s.perform('startTravel', { destinationId: 'shanghai' }, 100300);
+  s.perform('setSpeed', { msPerDay: 10000 }, 106000);
+  s.checkpointNow();
+  const save = s.toSave();
+  assert.ok(save.checkpoint.transit);
+  const r = RT.restoreSave(save, Game, s.nowMs);
+  assert.deepEqual(r.transit, s.transit);
+  assert.equal(r.msPerDay, 10000);
+  const destMs = s.transit.arriveAtMs + 10000;
+  s.advanceTo(destMs);
+  r.advanceTo(destMs);
+  assert.equal(r.game.cityId, 'shanghai');
+  assert.deepEqual(r.game.snapshot(), s.game.snapshot());
+  assert.equal(r.game.stats.transportCost, s.game.stats.transportCost);
+});
+
+test('기간별 실현손익은 매출·운송비·성장 투자비를 정확히 구분하며 저장 복원에도 유지된다', () => {
+  const s = create('accounting-profit-daily', 1000);
+  s.perform('buy', { productId: 'rice', qty: 2 }, 100010);
+  const sold = s.perform('sell', { productId: 'rice', qty: 2 }, 100300);
+  s.perform('upgradeIntel', {}, 100400);
+  const trip = s.perform('startTravel', { destinationId: 'busan' }, 101000);
+  const daily = s.recentPerformance('day', 8);
+  const first = daily.find((row) => row.index === 1);
+  const second = daily.find((row) => row.index === 2);
+  assert.equal(first.realizedProfit, sold.profit);
+  assert.equal(first.investmentCost, 6000);
+  assert.equal(first.buys, 1);
+  assert.equal(first.sells, 1);
+  assert.equal(first.netProfit, sold.profit - 6000);
+  assert.equal(second.transportCost, trip.cost);
+  assert.equal(second.trips, 1);
+  assert.equal(second.netProfit, -trip.cost);
+  const totals = s.performanceTotals();
+  assert.equal(totals.netProfit, sold.profit - 6000 - trip.cost);
+  assert.equal(totals.investmentCost, 6000);
+  const weekly = s.recentPerformance('week', 8);
+  assert.equal(weekly[0].netProfit, totals.netProfit);
+
+  const r = RT.restoreSave(s.toSave(), Game, s.nowMs);
+  assert.deepEqual(r.recentPerformance('day', 8), s.recentPerformance('day', 8));
+  assert.deepEqual(r.recentPerformance('week', 8), weekly);
+  assert.deepEqual(r.performanceTotals(), totals);
+});
+
+test('거래가 없는 날은 0원으로 표시하며 주간 집계는 7게임일 단위다', () => {
+  const s = create('empty-days-weekly', 1000);
+  s.advanceTo(100000 + 15 * 1000); // Day 16, week 3.
+  assert.equal(s.game.day, 16);
+  const daily = s.recentPerformance('day', 14);
+  assert.equal(daily.length, 14);
+  assert.equal(daily[0].index, 3);
+  assert.equal(daily[daily.length - 1].index, 16);
+  assert.ok(daily.every((row) => row.netProfit === 0));
+  const weeks = s.recentPerformance('week', 8);
+  assert.deepEqual(weeks.map((row) => [row.index, row.startDay, row.endDay]),
+    [[1, 1, 7], [2, 8, 14], [3, 15, 21]]);
+});
+
+test('체크포인트의 최근 180개 거래일과 52개 거래주 기록만 남긴다', () => {
+  const s = create('history-bounded', 1000);
+  for (let i = 0; i < 200; i++) {
+    s.perform('buy', { productId: 'rice', qty: 1 }, 100000 + i * 7000);
+    s.perform('sell', { productId: 'rice', qty: 1 }, 100010 + i * 7000);
+    s.toSave();
+  }
+  assert.ok(s.dailyHistory.length <= RT.DAILY_HISTORY_LIMIT);
+  assert.ok(s.weeklyHistory.length <= RT.WEEKLY_HISTORY_LIMIT);
+  const save = s.toSave();
+  assert.ok(save.checkpoint.dailyHistory.length <= RT.DAILY_HISTORY_LIMIT);
+  const restored = RT.restoreSave(save, Game, s.nowMs);
+  assert.deepEqual(restored.game.snapshot(), s.game.snapshot());
+  assert.deepEqual(restored.performanceTotals(), s.performanceTotals());
+});
+
+test('손상된 체크포인트는 잘못된 시장이나 행동을 덮어쓰지 않고 거부한다', () => {
+  const s = create('bad-checkpoint', 1000);
+  s.advanceTo(130000);
+  const save = s.toSave();
+  const badMarket = JSON.parse(JSON.stringify(save));
+  delete badMarket.checkpoint.economy.market.seoul;
+  assert.throws(() => RT.restoreSave(badMarket, Game, s.nowMs), /시장 상태|도시 상태/);
+  const missingCheckpoint = JSON.parse(JSON.stringify(save));
+  missingCheckpoint.checkpoint = null;
+  missingCheckpoint.archivedActionCount = 1;
+  assert.throws(() => RT.restoreSave(missingCheckpoint, Game, s.nowMs), /체크포인트/);
+  const badHistory = JSON.parse(JSON.stringify(save));
+  badHistory.checkpoint.dailyHistory = [{}];
+  assert.throws(() => RT.restoreSave(badHistory, Game, s.nowMs), /손익 집계/);
+  const badTail = JSON.parse(JSON.stringify(save));
+  badTail.actions = [{ type: 'buy', productId: 'rice', qty: 1, atMs: save.checkpoint.atMs - 1 }];
+  assert.throws(() => RT.restoreSave(badTail, Game, s.nowMs), /행동 시각/);
+});
+
+test('0.6 시드+전체 행동 저장은 체크포인트 없이도 0.6.1에서 복구되고 전환된다', () => {
+  const s = create('legacy-v0.6-before-checkpoint', 1000);
+  s.perform('buy', { productId: 'ginseng', qty: 2 }, 100020);
+  const legacy = s.toSave();
+  delete legacy.checkpoint;
+  delete legacy.archivedActionCount;
+  const restored = RT.restoreSave(legacy, Game, s.nowMs);
+  assert.deepEqual(restored.game.snapshot(), s.game.snapshot());
+  assert.equal(restored.archivedActions, 0);
+  restored.advanceTo(135000);
+  const compacted = restored.toSave();
+  assert.ok(compacted.checkpoint);
+  assert.deepEqual(RT.restoreSave(compacted, Game, restored.nowMs).game.snapshot(), restored.game.snapshot());
+});
+
 console.log('\nAll Merchant Globe realtime tests passed.');
