@@ -160,4 +160,99 @@ test('대량 오프라인 복구 제한은 무한 반복을 방지한다', () =>
   assert.equal(s.game.day, 1);
 });
 
+test('진행 중 속도 변경은 현재 경제 날짜를 유지하고 하루의 남은 비율만 단축한다', () => {
+  const s = create('instant-speed-switch', 60000);
+  s.advanceTo(130000); // First day is half elapsed at 60 s/day.
+  assert.equal(s.game.day, 1);
+  assert.equal(s.nextTickAtMs(), 160000);
+  const before = s.game.snapshot();
+  const changed = s.perform('setSpeed', { msPerDay: 10000 }, 130000);
+  assert.deepEqual(changed, { oldMsPerDay: 60000, msPerDay: 10000 });
+  assert.equal(s.nextTickAtMs(), 135000);
+  assert.equal(s.game.day, 1);
+  assert.deepEqual(s.game.snapshot(), before);
+  assert.equal(s.toSave().msPerDay, 60000);
+  assert.equal(s.toSave().activeMsPerDay, 10000);
+  s.advanceTo(134999);
+  assert.equal(s.game.day, 1);
+  s.advanceTo(135000);
+  assert.equal(s.game.day, 2);
+  s.advanceTo(145000);
+  assert.equal(s.game.day, 3);
+  const restored = RT.restoreSave(s.toSave(), Game, s.nowMs);
+  assert.equal(restored.msPerDay, 10000);
+  assert.equal(restored.nextTickAtMs(), s.nextTickAtMs());
+  assert.deepEqual(restored.game.snapshot(), s.game.snapshot());
+});
+
+test('운송 중 테스트 가속 변경은 남은 운송 시간과 경제 시계를 함께 단축한다', () => {
+  const s = create('accelerate-in-transit', 60000);
+  const cost = s.game.routeInfo('seoul', 'fukuoka').cost;
+  const original = s.perform('startTravel', { destinationId: 'fukuoka' }, 100000);
+  const originalCash = s.game.cash;
+  const originalArrival = original.arriveAtMs;
+  s.advanceTo(130000);
+  const remaining = s.remainingMs();
+  const changed = s.perform('setSpeed', { msPerDay: 10000 }, 130000);
+  assert.equal(changed.msPerDay, 10000);
+  const rescaledRemaining = Math.ceil(remaining / 6);
+  assert.equal(s.remainingMs(), rescaledRemaining);
+  assert.equal(s.transit.arriveAtMs, 130000 + rescaledRemaining);
+  assert.ok(s.transit.arriveAtMs < originalArrival);
+  assert.equal(s.game.cash, originalCash);
+  assert.equal(s.game.stats.transportCost, cost);
+  const saved = s.toSave();
+  const restored = RT.restoreSave(saved, Game, s.nowMs);
+  assert.deepEqual(restored.transit, s.transit);
+  assert.deepEqual(restored.game.snapshot(), s.game.snapshot());
+
+  const arrival = s.transit.arriveAtMs;
+  s.advanceTo(arrival - 1);
+  assert.ok(s.transit, 'Voyage should remain in transit until revised arrival time');
+  const result = s.advanceTo(arrival);
+  assert.equal(result.arrived, true);
+  assert.equal(s.game.cityId, 'fukuoka');
+  assert.equal(s.game.stats.transportCost, cost);
+  restored.advanceTo(arrival);
+  assert.deepEqual(restored.game.snapshot(), s.game.snapshot());
+  assert.equal(restored.transit, null);
+});
+
+test('여러 번 변경한 속도는 저장 복원 후 같은 날짜·현금·가격·미래 이벤트를 만든다', () => {
+  const s = create('multiple-speed-changes', 60000);
+  s.perform('buy', { productId: 'rice', qty: 3 }, 100020);
+  s.perform('setSpeed', { msPerDay: 10000 }, 132000);
+  s.advanceTo(142000);
+  s.perform('setSpeed', { msPerDay: 60000 }, 144000);
+  s.perform('startTravel', { destinationId: 'busan' }, 147000);
+  s.perform('setSpeed', { msPerDay: 10000 }, 153000);
+  s.advanceTo(s.transit.arriveAtMs + 22000);
+  const restored = RT.restoreSave(s.toSave(), Game, s.nowMs);
+  assert.deepEqual(restored.game.snapshot(), s.game.snapshot());
+  assert.equal(restored.msPerDay, s.msPerDay);
+  assert.equal(restored.nextTickAtMs(), s.nextTickAtMs());
+  assert.deepEqual(restored.actions, s.actions);
+  restored.advanceTo(s.nowMs + 50000);
+  s.advanceTo(s.nowMs + 50000);
+  assert.deepEqual(restored.game.snapshot(), s.game.snapshot());
+});
+
+test('기존 0.6 저장도 현재 속도 추가 필드 없이 복원되며 잘못된 속도 기록은 거부된다', () => {
+  const original = create('legacy-realtime-save', 60000);
+  original.advanceTo(200000);
+  const oldSave = original.toSave();
+  delete oldSave.activeMsPerDay;
+  const restored = RT.restoreSave(oldSave, Game, 200000);
+  assert.deepEqual(restored.game.snapshot(), original.game.snapshot());
+  assert.equal(restored.msPerDay, 60000);
+
+  const bad = original.toSave();
+  bad.actions.push({ type: 'setSpeed', msPerDay: 0, atMs: 200000 });
+  assert.throws(() => RT.restoreSave(bad, Game, 200000), /경제 갱신 간격/);
+
+  const tampered = original.toSave();
+  tampered.activeMsPerDay = 10000;
+  assert.throws(() => RT.restoreSave(tampered, Game, 200000), /속도 변경 기록/);
+});
+
 console.log('\nAll Merchant Globe realtime tests passed.');
