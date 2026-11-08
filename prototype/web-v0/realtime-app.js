@@ -372,6 +372,33 @@
     });
   }
 
+  function renderPerformanceHistory() {
+    const period = el('performancePeriod').value === 'week' ? 'week' : 'day';
+    const rows = session.recentPerformance(period, period === 'day' ? 14 : 8);
+    const container = el('performanceHistory');
+    container.replaceChildren();
+    rows.slice().reverse().forEach((item) => {
+      const line = document.createElement('div');
+      line.className = 'rt-history-row';
+      const label = document.createElement('strong');
+      label.className = 'rt-history-period';
+      label.textContent = period === 'day'
+        ? 'Day ' + item.index
+        : item.index + '주차 · Day ' + item.startDay + '–' + item.endDay;
+      const details = document.createElement('span');
+      details.className = 'rt-history-detail';
+      details.textContent = '판매손익 ' + signed(item.realizedProfit) +
+        ' · 운송 ' + money(item.transportCost) +
+        ' · 투자 ' + money(item.investmentCost) +
+        ' · 매입/판매 ' + item.buys + '/' + item.sells + '회';
+      const net = document.createElement('strong');
+      net.className = 'rt-history-net ' + (item.netProfit >= 0 ? 'positive' : 'negative');
+      net.textContent = signed(item.netProfit);
+      line.append(label, details, net);
+      container.appendChild(line);
+    });
+  }
+
   function renderEventsAndLog() {
     const game = session.game;
     const events = game.marketRumors();
@@ -392,9 +419,14 @@
     });
 
     const stats = game.stats;
+    const totals = session.performanceTotals();
     el('performance').textContent = '매입 ' + stats.buys + '회 · 판매 ' + stats.sells +
-      '회 · 이동 ' + stats.trips + '회 · 실현손익 ' + signed(stats.realizedProfit) +
-      ' · 운송비 ' + money(stats.transportCost);
+      '회 · 이동 ' + stats.trips + '회 · 판매 실현손익 ' + signed(totals.realizedProfit) +
+      ' · 운송비 ' + money(totals.transportCost) +
+      ' · 성장 투자비 ' + money(totals.investmentCost) +
+      ' · 비용 차감 후 실현손익 ' + signed(totals.netProfit) +
+      ' · 압축된 옛 행동 ' + session.archivedActions + '건';
+    renderPerformanceHistory();
     const log = el('tradeLog');
     log.replaceChildren();
     game.logs.slice(0, 10).forEach((entry) => {
@@ -435,15 +467,28 @@
     try {
       session.advanceTo(Date.now());
       const game = session.game;
+      const save = session.toSave();
+      // Telemetry export is intentionally not a restorable checkpoint:
+      // copying the full state would leak private remote market prices.
       const payload = {
-        exportVersion: 1, exportedAt: new Date().toISOString(),
-        save: session.toSave(),
+        exportVersion: 2, exportedAt: new Date().toISOString(),
+        session: {
+          seed: save.seed, startedAtMs: save.startedAtMs,
+          observedAtMs: save.observedAtMs,
+          msPerDay: save.msPerDay, activeMsPerDay: save.activeMsPerDay,
+          archivedActionCount: save.archivedActionCount,
+          lastCheckpointDay: save.checkpoint ? save.checkpoint.economy.day : null,
+          recentActions: save.actions
+        },
         summary: {
           economicDay: game.day, cityId: game.cityId,
           transit: session.transit, cash: game.cash,
           totalAssets: game.totalAssets(), cargoUsed: game.cargoUsed(),
-          inventory: game.inventory, stats: game.stats
-        }
+          inventory: game.inventory, stats: game.stats,
+          performance: session.performanceTotals()
+        },
+        recentDailyPerformance: session.recentPerformance('day', 14),
+        recentWeeklyPerformance: session.recentPerformance('week', 8)
       };
       const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' });
       const url = URL.createObjectURL(blob);
@@ -460,6 +505,7 @@
     }
   }
 
+  el('performancePeriod').addEventListener('change', renderPerformanceHistory);
   el('speedSelect').addEventListener('change', () => {
     const nextSpeed = Number(el('speedSelect').value);
     try {
