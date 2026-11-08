@@ -422,4 +422,42 @@ test('0.6 시드+전체 행동 저장은 체크포인트 없이도 0.6.1에서 �
   assert.deepEqual(RT.restoreSave(compacted, Game, restored.nowMs).game.snapshot(), restored.game.snapshot());
 });
 
+test('장기간 오프라인 복원은 한 번에 100,000일을 넘겨도 나누어 진행할 수 있다', () => {
+  const s = create('very-long-offline-batched', 1000);
+  const target = s.nowMs + 100001 * 1000;
+  const progress = s.advanceTowards(target, 250);
+  assert.equal(progress.ticks, 250);
+  assert.equal(progress.complete, false);
+  assert.equal(s.game.day, 251);
+  const save = s.toSave();
+  assert.ok(save.checkpoint);
+  const partiallyRestored = RT.restoreSave(save, Game, target, { catchUpTicks: 250 });
+  assert.equal(partiallyRestored.game.day, 501);
+  assert.ok(partiallyRestored.nowMs < target);
+});
+
+test('분할 오프라인 복원과 일괄 복원은 운송 도착 및 이후 경제 난수가 같다', () => {
+  const s = create('batched-economy-arrival', 1000);
+  s.perform('buy', { productId: 'fish', qty: 3 }, 100010);
+  const trip = s.perform('startTravel', { destinationId: 'busan' }, 100200);
+  const save = s.toSave();
+  const target = 100000 + 2700 * 1000;
+  const direct = RT.restoreSave(save, Game, target);
+  const bounded = RT.restoreSave(save, Game, target, { catchUpTicks: 250 });
+  assert.ok(bounded.nowMs < target);
+  let rounds = 1;
+  while (bounded.nowMs < target) {
+    const result = bounded.advanceTowards(target, 250);
+    assert.ok(result.ticks <= 250);
+    rounds++;
+    assert.ok(rounds < 20);
+  }
+  assert.ok(rounds > 5);
+  assert.ok(trip.arriveAtMs < target);
+  assert.equal(bounded.game.cityId, 'busan');
+  assert.deepEqual(bounded.game.snapshot(), direct.game.snapshot());
+  assert.deepEqual(bounded.recentPerformance('day', 14), direct.recentPerformance('day', 14));
+  assert.deepEqual(bounded.transit, direct.transit);
+});
+
 console.log('\nAll Merchant Globe realtime tests passed.');
