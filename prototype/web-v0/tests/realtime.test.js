@@ -151,7 +151,7 @@ test('무효한 저장 기록과 미지원 행동은 거부되며 기존 30일 �
   assert.equal(Save.GAME_VERSION, '0.4.0');
   const classic = Save.createSavePayload({ seed: 12345, maxDay: 30, actions: [] });
   assert.equal(Save.restoreGame(classic, Game).game.maxDay, 30);
-  assert.throws(() => Save.validateSave(s.toSave()), /지원하지 않는 저장 형식/);
+  assert.throws(() => Save.validateSave(s.toSave()), /호환되지 않는 저장 데이터/);
 });
 
 test('대량 오프라인 복구 제한은 무한 반복을 방지한다', () => {
