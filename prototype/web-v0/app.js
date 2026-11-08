@@ -305,13 +305,13 @@
       tr.dataset.productId = product.id;
       tr.innerHTML = `
         <td><span class="product-name">${product.name}</span><span class="trait-chip trait-${product.trait}">${product.traitLabel}</span><span class="price-note">기준 ${money(product.basePrice)} · 화물 ${product.cargoSize || 1}칸${product.trait === 'perishable' ? ' · 이동 시 신선도 하락' : ''}</span></td>
-        <td class="number"><strong>${money(info.price)}</strong></td>
-        <td class="number"><span class="market-chip ${stateClass(info.stockLabel)}">${info.stock}개 · ${info.stockLabel}</span><span class="price-note">평시 ${info.targetStock}개 (${stockPct}%)</span></td>
-        <td class="number"><span class="market-chip ${stateClass(info.demandLabel)}">${info.demandLabel}</span><span class="price-note">평시 대비 ${demandPct}%</span></td>
-        <td class="number ${deviation > 1 ? 'positive' : deviation < -1 ? 'negative' : 'neutral'}">${pct(deviation)}</td>
-        <td class="number">${item.qty}</td>
-        <td class="number">${item.qty ? money(item.avgCost) : '—'}</td>
-        <td class="number ${heldProfitRate != null && heldProfitRate > 0 ? 'positive' : heldProfitRate != null && heldProfitRate < 0 ? 'negative' : 'neutral'}">${heldProfitRate == null ? '—' : pct(heldProfitRate)}</td>
+        <td class="number" data-label="현재가"><strong>${money(info.price)}</strong></td>
+        <td class="number" data-label="시장 재고"><span class="market-chip ${stateClass(info.stockLabel)}">${info.stock}개 · ${info.stockLabel}</span><span class="price-note">평시 ${info.targetStock}개 (${stockPct}%)</span></td>
+        <td class="number" data-label="수요"><span class="market-chip ${stateClass(info.demandLabel)}">${info.demandLabel}</span><span class="price-note">평시 대비 ${demandPct}%</span></td>
+        <td data-label="기준가 대비" class="number ${deviation > 1 ? 'positive' : deviation < -1 ? 'negative' : 'neutral'}">${pct(deviation)}</td>
+        <td class="number" data-label="보유 수량">${item.qty}</td>
+        <td class="number" data-label="평균 매입가">${item.qty ? money(item.avgCost) : '—'}</td>
+        <td data-label="보유 손익" class="number ${heldProfitRate != null && heldProfitRate > 0 ? 'positive' : heldProfitRate != null && heldProfitRate < 0 ? 'negative' : 'neutral'}">${heldProfitRate == null ? '—' : pct(heldProfitRate)}</td>
         <td class="trade-cell">
           <div class="trade-actions">
             <div class="trade-action-side"><button class="buy-button" type="button">매입</button><button class="buy-max-button" type="button">최대 매입</button></div>
