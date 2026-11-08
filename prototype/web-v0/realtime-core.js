@@ -1,14 +1,14 @@
 (function (global) {
   'use strict';
 
-  // Prototype clock ratio only: one economic day per real minute. This is
-  // configurable at session creation for accelerated, deterministic tests.
+  // Prototype clock ratio defaults to one economic day per real minute.
+  // Speed changes preserve the current day's progress and are replayable.
   const SAVE_SCHEMA_VERSION = 1;
   const DEFAULT_MS_PER_DAY = 60000;
   const MAX_ADVANCE_TICKS = 100000;
   const MAX_ACTIONS = 100000;
   const UNLIMITED_DAY = Number.MAX_SAFE_INTEGER;
-  const TYPES = Object.freeze(['buy', 'sell', 'upgradeCargo', 'upgradeIntel', 'startTravel']);
+  const TYPES = Object.freeze(['buy', 'sell', 'upgradeCargo', 'upgradeIntel', 'startTravel', 'setSpeed']);
 
   function clone(value) { return JSON.parse(JSON.stringify(value)); }
   function integer(value, label, min, max) {
@@ -28,6 +28,9 @@
       }
       this.startedAtMs = integer(opts.startedAtMs, '시작 시각', 0);
       this.msPerDay = integer(opts.msPerDay == null ? DEFAULT_MS_PER_DAY : opts.msPerDay, '경제 갱신 간격', 1, 86400000);
+      this.initialMsPerDay = this.msPerDay;
+      this.clockEpochMs = this.startedAtMs;
+      this.clockEpochDay = 1;
       this.nowMs = this.startedAtMs;
       this.game = new opts.GameClass({ seed: this.seed, maxDay: UNLIMITED_DAY });
       this.transit = null;
@@ -35,7 +38,7 @@
     }
 
     nextTickAtMs() {
-      return this.startedAtMs + this.game.day * this.msPerDay;
+      return this.clockEpochMs + (this.game.day - this.clockEpochDay + 1) * this.msPerDay;
     }
 
     remainingMs() {
@@ -45,8 +48,8 @@
     advanceTo(targetMs) {
       integer(targetMs, '현재 시각', 0);
       if (targetMs <= this.nowMs) return { ticks: 0, arrived: false, nowMs: this.nowMs };
-      const totalTick = Math.floor((targetMs - this.startedAtMs) / this.msPerDay);
-      const due = totalTick - (this.game.day - 1);
+      const totalTick = Math.floor((targetMs - this.clockEpochMs) / this.msPerDay);
+      const due = totalTick - (this.game.day - this.clockEpochDay);
       if (due > MAX_ADVANCE_TICKS) {
         throw new Error('오프라인 경과 시간이 너무 깁니다. 복구를 위해 진행 기록을 분할해야 합니다.');
       }
@@ -54,8 +57,8 @@
       let ticks = 0;
       let arrived = false;
       if (this.transit && this.transit.arriveAtMs <= targetMs) {
-        const arrivalTicks = Math.floor((this.transit.arriveAtMs - this.startedAtMs) / this.msPerDay);
-        const beforeArrival = Math.max(0, arrivalTicks - (this.game.day - 1));
+        const arrivalTicks = Math.floor((this.transit.arriveAtMs - this.clockEpochMs) / this.msPerDay);
+        const beforeArrival = Math.max(0, arrivalTicks - (this.game.day - this.clockEpochDay));
         if (beforeArrival) {
           this.game.advanceEconomy(beforeArrival);
           ticks += beforeArrival;
@@ -70,13 +73,38 @@
         arrived = true;
       }
 
-      const afterArrival = Math.max(0, totalTick - (this.game.day - 1));
+      const afterArrival = Math.max(0, totalTick - (this.game.day - this.clockEpochDay));
       if (afterArrival) {
         this.game.advanceEconomy(afterArrival);
         ticks += afterArrival;
       }
       this.nowMs = targetMs;
       return { ticks, arrived, nowMs: this.nowMs };
+    }
+
+    // Adjust the active clock without discarding fractional progress through
+    // the current economic day. Also rescale an in-flight voyage's remaining
+    // time; route costs and the number of remaining game days do not change.
+    changeSpeed(nextMsPerDay) {
+      const next = integer(nextMsPerDay, '경제 갱신 간격', 1, 86400000);
+      const previous = this.msPerDay;
+      if (next === previous) return { oldMsPerDay: previous, msPerDay: next };
+
+      const oldRemaining = this.nextTickAtMs() - this.nowMs;
+      const newRemaining = Math.max(1, Math.ceil(oldRemaining * next / previous));
+      this.clockEpochMs = this.nowMs + newRemaining - next;
+      this.clockEpochDay = this.game.day;
+      this.msPerDay = next;
+
+      if (this.transit) {
+        const trip = this.transit;
+        const remaining = Math.max(0, trip.arriveAtMs - this.nowMs);
+        const elapsed = Math.max(0, this.nowMs - trip.departedAtMs);
+        trip.arriveAtMs = this.nowMs + Math.max(1, Math.ceil(remaining * next / previous));
+        trip.departedAtMs = this.nowMs - Math.round(elapsed * next / previous);
+      }
+
+      return { oldMsPerDay: previous, msPerDay: next };
     }
 
     tradeQuote(productId, quantity) {
@@ -90,13 +118,16 @@
       if (!TYPES.includes(type)) throw new Error('지원하지 않는 실시간 행동입니다.');
       const when = integer(atMs, '행동 시각', this.startedAtMs);
       this.advanceTo(when);
-      if (this.transit) throw new Error('운송 중에는 거래와 추가 이동을 할 수 없습니다.');
+      if (this.transit && type !== 'setSpeed') throw new Error('운송 중에는 거래와 추가 이동을 할 수 없습니다.');
       if (this.actions.length >= MAX_ACTIONS) throw new Error('저장 가능한 행동 수를 초과했습니다.');
       const payload = data || {};
       let result;
       let action;
 
-      if (type === 'buy' || type === 'sell') {
+      if (type === 'setSpeed') {
+        result = this.changeSpeed(payload.msPerDay);
+        action = { type, atMs: this.nowMs, msPerDay: this.msPerDay };
+      } else if (type === 'buy' || type === 'sell') {
         if (typeof payload.productId !== 'string' || !payload.productId) throw new Error('상품 ID가 올바르지 않습니다.');
         const qty = integer(payload.qty, '거래 수량', 1, 9999);
         result = this.game[type](payload.productId, qty);
@@ -145,7 +176,8 @@
         seed: this.seed,
         startedAtMs: this.startedAtMs,
         observedAtMs: this.nowMs,
-        msPerDay: this.msPerDay,
+        msPerDay: this.initialMsPerDay,
+        activeMsPerDay: this.msPerDay,
         actions: clone(this.actions)
       };
     }
@@ -159,6 +191,7 @@
     integer(payload.startedAtMs, '시작 시각', 0);
     integer(payload.observedAtMs, '저장 시각', payload.startedAtMs);
     integer(payload.msPerDay, '경제 갱신 간격', 1, 86400000);
+    if (payload.activeMsPerDay != null) integer(payload.activeMsPerDay, '현재 경제 갱신 간격', 1, 86400000);
     if (!Array.isArray(payload.actions) || payload.actions.length > MAX_ACTIONS) throw new Error('행동 기록이 올바르지 않습니다.');
     let lastTime = payload.startedAtMs;
     for (const action of payload.actions) {
@@ -171,6 +204,7 @@
       if (action.type === 'startTravel' && (typeof action.destinationId !== 'string' || !action.destinationId)) {
         throw new Error('저장된 이동 목적지가 올바르지 않습니다.');
       }
+      if (action.type === 'setSpeed') integer(action.msPerDay, '저장된 경제 갱신 간격', 1, 86400000);
       lastTime = action.atMs;
     }
     return true;
@@ -183,6 +217,9 @@
       startedAtMs: payload.startedAtMs, msPerDay: payload.msPerDay
     });
     payload.actions.forEach((action) => session.perform(action.type, action, action.atMs));
+    if (payload.activeMsPerDay != null && session.msPerDay !== payload.activeMsPerDay) {
+      throw new Error('저장된 경제 속도 변경 기록이 일치하지 않습니다.');
+    }
     // A backward system clock must not reverse already-observed economic time.
     session.advanceTo(Math.max(payload.observedAtMs, nowMs == null ? payload.observedAtMs : nowMs));
     return session;
