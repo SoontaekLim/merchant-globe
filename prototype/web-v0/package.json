@@ -1,10 +1,10 @@
 {
   "name": "merchant-globe-mvp",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "private": true,
   "scripts": {
     "dev": "python server.py",
-    "test": "node tests/game-core.test.js && node tests/save-system.test.js && node tests/simulation.test.js && node tests/play-report.test.js",
+    "test": "node tests/game-core.test.js && node tests/save-system.test.js && node tests/simulation.test.js && node tests/play-report.test.js && node tests/trade-ux.test.js",
     "simulate": "node simulation/runner.js --runs 100 --bot all",
     "simulate:quick": "node simulation/runner.js --runs 10 --bot all",
     "simulate:balance": "node simulation/runner.js --runs 1000 --bot greedy",
