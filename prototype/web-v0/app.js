@@ -104,12 +104,12 @@
     }
   }
 
-  function trackTradeControl(side, productId, quantity, control) {
+  function trackTradeControl(side, productId, quantity, control, surface = 'market') {
     const entry = TradeUX.createControlEntry({
       actionIndex: actionHistory.length + 1,
       day: game.day,
       cityId: game.cityId,
-      side, productId, quantity, control
+      side, productId, quantity, control, surface
     });
     entry.clickedAt = new Date().toISOString();
     tradeControls.push(entry);
@@ -147,7 +147,8 @@
         tradeControlSummary: (() => {
           const summary = TradeUX.summarizeControls(actionHistory, tradeControls);
           return { totalTrades: summary.totalTrades, trackedTrades: summary.trackedTrades,
-            untrackedTrades: summary.untrackedTrades, counts: summary.counts };
+            untrackedTrades: summary.untrackedTrades, counts: summary.counts,
+            surfaceCounts: summary.surfaceCounts };
         })()
       };
       const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' });
@@ -237,6 +238,33 @@
       showToast(error.message || '처리 중 오류가 발생했습니다.', true);
       return null;
     }
+  }
+
+  function executeTrade(productId, side, qty, control, surface = 'market') {
+    if (!Number.isInteger(qty) || qty < 1) return null;
+    const product = game.getProduct(productId);
+    if (!product) return null;
+
+    const result = safeAction(() => side === 'buy'
+      ? game.buy(productId, qty)
+      : game.sell(productId, qty));
+    if (!result) return null;
+
+    trackTradeControl(side, productId, qty, control, surface);
+    recordAction({ type: side, productId, qty });
+
+    if (side === 'buy') {
+      showToast(product.name + ' ' + qty + '개 매입 ' + money(result.total) +
+        ' · 매입 후 현금 ' + money(game.cash));
+      el('newsTitle').textContent = product.name + ' 매입 완료';
+      el('newsText').textContent = '거래량이 시장 재고와 다음 체결가격에 반영되었습니다.';
+    } else {
+      showToast(product.name + ' ' + qty + '개 판매 ' + money(result.revenue) +
+        ' · 실현손익 ' + signedMoney(result.profit) + ' · 판매 후 현금 ' + money(game.cash));
+      el('newsTitle').textContent = product.name + ' 판매 완료';
+      el('newsText').textContent = '판매 물량이 현지 시장 재고에 반영되었습니다.';
+    }
+    return result;
   }
 
   function tradeQuantity() {
@@ -493,41 +521,19 @@
           </div>
         </div>`;
 
-      function executeTrade(side, qty, control) {
-        if (!qty || qty < 1) return;
-        const result = safeAction(() => side === 'buy'
-          ? game.buy(product.id, qty)
-          : game.sell(product.id, qty));
-        if (!result) return;
-
-        trackTradeControl(side, product.id, qty, control);
-        recordAction({ type: side, productId: product.id, qty });
-        if (side === 'buy') {
-          showToast(product.name + ' ' + qty + '개 매입 ' + money(result.total) +
-            ' · 매입 후 현금 ' + money(game.cash));
-          el('newsTitle').textContent = product.name + ' 매입 완료';
-          el('newsText').textContent = '거래량이 시장 재고와 다음 체결가격에 반영되었습니다.';
-        } else {
-          showToast(product.name + ' ' + qty + '개 판매 ' + money(result.revenue) +
-            ' · 실현손익 ' + signedMoney(result.profit) + ' · 판매 후 현금 ' + money(game.cash));
-          el('newsTitle').textContent = product.name + ' 판매 완료';
-          el('newsText').textContent = '판매 물량이 현지 시장 재고에 반영되었습니다.';
-        }
-      }
-
       card.querySelector('.buy-button').addEventListener('click', () =>
-        executeTrade('buy', tradeQuantity(), selectedQuantityMode));
+        executeTrade(product.id, 'buy', tradeQuantity(), selectedQuantityMode));
       card.querySelector('.sell-button').addEventListener('click', () =>
-        executeTrade('sell', tradeQuantity(), selectedQuantityMode));
+        executeTrade(product.id, 'sell', tradeQuantity(), selectedQuantityMode));
       card.querySelector('.buy-max-button').addEventListener('click', () => {
         const budget = TradeUX.tradeBudget(game, product.id, 1, plannedDestinationId);
         const reserve = el('keepTravelCost').checked;
         const qty = reserve ? budget.maxWithTransport : budget.maxWithoutTransport;
-        executeTrade('buy', qty, reserve ? 'reserve_max_buy' : 'max_buy');
+        executeTrade(product.id, 'buy', qty, reserve ? 'reserve_max_buy' : 'max_buy');
       });
       card.querySelector('.sell-all-button').addEventListener('click', () => {
         const qty = TradeUX.quote(game, product.id, 1).sell.maxQuantity;
-        executeTrade('sell', qty, 'sell_all');
+        executeTrade(product.id, 'sell', qty, 'sell_all');
       });
       body.appendChild(card);
     });
@@ -536,26 +542,111 @@
 
   function renderCargo() {
     const used = game.cargoUsed();
-    el('cargoCount').textContent = `${used} / ${game.capacity}`;
-    el('cargoBar').style.width = `${Math.min(100, (used / game.capacity) * 100)}%`;
+    el('cargoCount').textContent = used + ' / ' + game.capacity;
+    el('cargoBar').style.width = Math.min(100, (used / game.capacity) * 100) + '%';
     el('upgradeCost').textContent = money(game.cargoUpgradeCost());
     el('upgradeCargoBtn').disabled = game.gameOver;
 
     const list = el('inventoryList');
+    list.replaceChildren();
     const items = PRODUCTS.filter((p) => game.inventory[p.id].qty > 0);
     if (!items.length) {
       list.innerHTML = '<div class="empty-state">아직 보유한 상품이 없습니다.</div>';
       return;
     }
-    list.innerHTML = items.map((p) => {
-      const item = game.inventory[p.id];
-      const freshness = game.freshnessMultiplier(p.id);
-      const current = game.price(game.cityId, p.id) * freshness;
+
+    items.forEach((product) => {
+      const item = game.inventory[product.id];
+      const freshness = game.freshnessMultiplier(product.id);
+      const current = game.price(game.cityId, product.id) * freshness;
       const rate = ((current / item.avgCost) - 1) * 100;
-      const slots = item.qty * (p.cargoSize || 1);
-      const freshnessText = p.trait === 'perishable' ? ` · 신선도 ${Math.round(freshness * 100)}%` : '';
-      return `<div class="inventory-row"><span><b>${p.name}</b> × ${item.qty}<small>${slots}칸${freshnessText}</small></span><span>평균 ${money(item.avgCost)} · <span class="${rate >= 0 ? 'positive' : 'negative'}">${pct(rate)}</span></span></div>`;
-    }).join('');
+      const slots = item.qty * (product.cargoSize || 1);
+      const freshnessText = product.trait === 'perishable'
+        ? ' · 신선도 ' + Math.round(freshness * 100) + '%' : '';
+
+      const card = document.createElement('article');
+      card.className = 'cargo-item';
+      card.dataset.productId = product.id;
+      card.innerHTML = `
+        <div class="cargo-item-heading">
+          <div>
+            <strong class="cargo-product-name">${product.name} × ${item.qty}</strong>
+            <small>화물 ${slots}칸${freshnessText}</small>
+            <small>평균 매입가 ${money(item.avgCost)} · 시세 대비 <span class="${rate >= 0 ? 'positive' : 'negative'}">${pct(rate)}</span></small>
+          </div>
+        </div>
+        <div class="cargo-sale-form">
+          <label class="cargo-qty-label">판매 수량
+            <input class="cargo-sale-qty" type="number" min="1" max="${item.qty}" step="1" value="1" inputmode="numeric" />
+          </label>
+          <div class="cargo-sale-buttons">
+            <button class="cargo-sell-selected sell-button" type="button">선택 1개 판매</button>
+            <button class="cargo-sell-all secondary-button" type="button">전량 ${item.qty}개 판매</button>
+          </div>
+        </div>
+        <div class="cargo-sale-quotes" aria-live="off">
+          <div class="cargo-sale-selected-quote"></div>
+          <div class="cargo-sale-all-quote"></div>
+        </div>`;
+
+      const input = card.querySelector('.cargo-sale-qty');
+      const selectedButton = card.querySelector('.cargo-sell-selected');
+      const allButton = card.querySelector('.cargo-sell-all');
+      const selectedText = card.querySelector('.cargo-sale-selected-quote');
+      const allText = card.querySelector('.cargo-sale-all-quote');
+      const route = plannedDestinationId && game.routeInfo(game.cityId, plannedDestinationId);
+      const routeCost = route ? route.cost : 0;
+      const routeName = route ? CITIES[plannedDestinationId].name : null;
+      const routeHint = (cashAfter) => routeName
+        ? routeName + ' 이동 후 ' +
+          (cashAfter >= routeCost ? money(cashAfter - routeCost) : '운송비 부족 ' + money(routeCost - cashAfter))
+        : '이동 예정 항로 없음';
+
+      function renderCargoSellPreview() {
+        const requested = TradeUX.normalizeQuantity(input.value);
+        const selected = TradeUX.quote(game, product.id, requested).sell;
+        const all = TradeUX.quote(game, product.id, item.qty).sell;
+        selectedButton.disabled = !selected.allowed;
+        allButton.disabled = !all.allowed;
+        selectedButton.textContent = '선택 ' + requested + '개 판매';
+
+        if (selected.allowed) {
+          const after = game.cash + selected.revenue;
+          selectedText.textContent = '선택 판매 예상 ' + money(selected.revenue) +
+            ' · 실현손익 ' + signedMoney(selected.profit) +
+            ' · 판매 후 현금 ' + money(after) + ' · ' + routeHint(after);
+          selectedText.className = 'cargo-sale-selected-quote';
+        } else {
+          selectedText.textContent = '선택 판매 불가 · 보유량 ' + item.qty + '개 이내로 입력하세요.';
+          selectedText.className = 'cargo-sale-selected-quote unavailable';
+        }
+
+        if (all.allowed) {
+          const after = game.cash + all.revenue;
+          allText.textContent = '전량 판매 예상 ' + money(all.revenue) +
+            ' · 실현손익 ' + signedMoney(all.profit) +
+            ' · 판매 후 현금 ' + money(after) + ' · ' + routeHint(after);
+        } else {
+          allText.textContent = '전량 판매할 상품이 없습니다.';
+        }
+      }
+
+      input.addEventListener('input', renderCargoSellPreview);
+      input.addEventListener('change', () => {
+        input.value = String(Math.min(item.qty, TradeUX.normalizeQuantity(input.value)));
+        renderCargoSellPreview();
+      });
+      selectedButton.addEventListener('click', () => {
+        const qty = TradeUX.normalizeQuantity(input.value);
+        if (qty > item.qty) return;
+        executeTrade(product.id, 'sell', qty, 'custom', 'cargo');
+      });
+      allButton.addEventListener('click', () => {
+        executeTrade(product.id, 'sell', game.inventory[product.id].qty, 'sell_all', 'cargo');
+      });
+      renderCargoSellPreview();
+      list.appendChild(card);
+    });
   }
 
   function renderRoutes() {

@@ -119,6 +119,9 @@
     if ((['max_buy', 'reserve_max_buy'].includes(opts.control) && opts.side !== 'buy') || (opts.control === 'sell_all' && opts.side !== 'sell')) {
       throw new Error('거래 입력 방식과 거래 유형이 일치하지 않습니다.');
     }
+    if (opts.surface != null && !['market', 'cargo'].includes(opts.surface)) {
+      throw new Error('알 수 없는 거래 위치입니다.');
+    }
 
     return {
       type: 'trade_control',
@@ -128,21 +131,25 @@
       side: opts.side,
       productId: opts.productId,
       quantity: opts.quantity,
-      control: opts.control
+      control: opts.control,
+      surface: opts.surface || 'market'
     };
   }
 
   function summarizeControls(actions, entries) {
     const counts = Object.fromEntries(CONTROL_MODES.map((mode) => [mode, 0]));
+    const surfaceCounts = { market: 0, cargo: 0 };
     const validEntries = [];
     const seen = new Set();
     for (const entry of entries || []) {
       if (!entry || !CONTROL_MODES.includes(entry.control) || !Number.isInteger(entry.actionIndex) || seen.has(entry.actionIndex)) continue;
+      if (entry.surface != null && !['market', 'cargo'].includes(entry.surface)) continue;
       const action = (actions || [])[entry.actionIndex - 1];
       if (!action || !['buy', 'sell'].includes(action.type)) continue;
       if (action.type !== entry.side || action.productId !== entry.productId || action.qty !== entry.quantity) continue;
       if ((['max_buy', 'reserve_max_buy'].includes(entry.control) && entry.side !== 'buy') || (entry.control === 'sell_all' && entry.side !== 'sell')) continue;
       counts[entry.control]++;
+      surfaceCounts[entry.surface || 'market']++;
       validEntries.push(entry);
       seen.add(entry.actionIndex);
     }
@@ -152,6 +159,7 @@
       trackedTrades: validEntries.length,
       untrackedTrades: totalTrades - validEntries.length,
       counts,
+      surfaceCounts,
       entries: validEntries
     };
   }
