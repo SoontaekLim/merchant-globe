@@ -39,7 +39,7 @@ merchant-globe/
 
 ## 현재 프로토타입
 
-버전: **0.4**
+버전: **0.6 실시간 프로토타입** (기존 30일 밸런스 실험 보존)
 
 주요 구현:
 
@@ -53,7 +53,11 @@ merchant-globe/
 - 시장 이벤트
 - 시간 경과에 따른 재고/수요 회복
 - 기본 업그레이드
-- 30일 플레이
+- 실시간 경제 시계(기본 현실 60초/게임 1일, 테스트 가속 10초/일)와 무제한 진행
+- 출발·운송 중·도착의 실제 경과 시간 기반 이동
+- 브라우저 재접속 시 오프라인 시간·항해 완료 복원
+- 거래 예산 및 화물칸 직접 판매 UX
+- 별도 클래식 모드에서 30일 플레이
 - 시장 정보망과 오래된 원격 시세
 - 정보 정확도에 따른 시장 소문
 - 도시별 생산·소비 특성
@@ -62,6 +66,8 @@ merchant-globe/
 - 항로 혼잡·순풍에 따른 운송비/시간 변화
 - 브라우저 로컬 자동저장 / 이어하기
 - 결정적 저장 복원 테스트를 포함한 경제 엔진 자동 테스트
+
+기본 페이지 `http://127.0.0.1:8000`은 0.6 실시간 모드이며, 기존 30일 벤치마크는 `/classic.html`에 있습니다. 이전 클래식 저장은 별도 슬롯에서 보존합니다.
 
 실행 방법과 상세 내용은 [`prototype/web-v0/README.md`](prototype/web-v0/README.md)를 참고하세요.
 
@@ -72,17 +78,17 @@ merchant-globe/
 
 CI는 현재 다음을 확인합니다.
 
-- `game-core.js`, `app.js` JavaScript 문법 검사
+- 기존 `game-core.js`, `app.js`와 신규 `realtime-core.js`, `realtime-app.js` 문법 검사
 - 경제/시장 정보/저장 복원/시뮬레이터 자동 테스트
 - RandomBot / GreedyBot 빠른 밸런스 시뮬레이션
 - `server.py` Python 문법 검사
-- 개발 서버 실행 후 `/api/health` 응답 검증
+- 개발 서버 실행 후 `/api/health` 응답 및 실시간/클래식 화면 확인
 - 루트 웹 페이지가 정상 제공되는지 스모크 테스트
 
 로컬에서는 다음 명령으로 핵심 테스트를 실행할 수 있습니다.
 
 ```powershell
 cd prototype\web-v0
-npm test
-npm run simulate:quick
+npm.cmd test
+npm.cmd run simulate:quick
 ```

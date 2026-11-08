@@ -4,196 +4,147 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="theme-color" content="#0f172a" />
-  <title>Merchant Globe MVP</title>
+  <title>Merchant Globe 0.6 — 실시간 무역</title>
   <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="realtime.css" />
 </head>
 <body>
-  <div class="app-shell">
-    <header class="topbar">
-      <div>
-        <p class="eyebrow">TRADE SIMULATION MVP</p>
-        <h1>Merchant Globe</h1>
-      </div>
-      <div style="display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap;">
-        <span id="saveStatus" class="muted">저장 없음</span>
-        <button id="exportPlayLogBtn" class="secondary-button" type="button">플레이 기록 JSON</button>
-        <button id="saveGameBtn" class="secondary-button" type="button">저장</button>
-        <button id="deleteSaveBtn" class="secondary-button" type="button">저장 삭제</button>
-        <button id="newGameBtn" class="secondary-button" type="button">새 게임</button>
-      </div>
-    </header>
+<div class="app-shell rt-app">
+  <header class="topbar rt-topbar">
+    <div>
+      <p class="eyebrow">MERCHANT GLOBE · REAL-TIME PROTOTYPE 0.6</p>
+      <h1>Merchant Globe</h1>
+      <p class="muted">시장과 운송이 거래와 무관하게 진행되는 지속형 무역 시뮬레이션</p>
+    </div>
+    <div class="rt-top-actions">
+      <a href="classic.html" class="rt-outline-link">30일 밸런스 테스트</a>
+      <span id="saveStatus" class="muted">저장 없음</span>
+      <button id="exportBtn" class="secondary-button" type="button">기록 JSON</button>
+      <button id="saveBtn" class="secondary-button" type="button">저장</button>
+      <button id="newGameBtn" class="secondary-button" type="button">새 게임</button>
+      <button id="deleteSaveBtn" class="secondary-button" type="button">저장 삭제</button>
+    </div>
+  </header>
 
-    <main>
-      <section class="status-grid" aria-label="현재 상태">
-        <article class="stat-card"><span>현재 도시</span><strong id="currentCity">서울</strong><small id="cityCountry">대한민국</small></article>
-        <article class="stat-card"><span>날짜</span><strong id="day">1 / 30</strong><small>거래 기간</small></article>
-        <article class="stat-card"><span>현금</span><strong id="cash">₩10,000</strong><small>사용 가능 자금</small></article>
-        <article class="stat-card accent"><span>총 자산</span><strong id="assets">₩10,000</strong><small>현재 도시 시세 기준</small></article>
-      </section>
+  <main>
+    <section class="status-grid" aria-label="실시간 게임 상태">
+      <article class="stat-card"><span>위치</span><strong id="currentCity">서울</strong><small id="cityDetail">대한민국</small></article>
+      <article class="stat-card"><span>경제 날짜</span><strong id="day">Day 1 · 무제한</strong><small id="nextTick">다음 갱신까지 —</small></article>
+      <article class="stat-card"><span>현금</span><strong id="cash">₩10,000</strong><small>거래 가능한 자금</small></article>
+      <article class="stat-card accent"><span>총 자산</span><strong id="assets">₩10,000</strong><small>화물은 현재 표시 도시 시세 평가</small></article>
+    </section>
 
-      <section class="news-panel">
+    <section class="rt-clock-panel" aria-label="실시간 경제 시계 및 운송 상태">
+      <div class="rt-clock-info">
         <div>
-          <p class="section-label">MARKET INTELLIGENCE</p>
-          <h2 id="newsTitle">시장 정보</h2>
+          <p class="section-label">LIVE WORLD CLOCK</p>
+          <h2 id="clockState">경제 진행 중</h2>
+          <p id="clockDescription" class="muted">거래하지 않아도 시장이 자동으로 바뀝니다.</p>
         </div>
-        <p id="newsText">서울 시장에서 거래를 시작했습니다. 가격뿐 아니라 재고와 수요를 함께 살펴보세요.</p>
+        <div class="rt-new-speed">
+          <label for="speedSelect">현재 게임 시간 속도</label>
+          <select id="speedSelect">
+            <option value="60000">현실 1분 = 게임 1일</option>
+            <option value="10000">테스트 가속 · 10초/일</option>
+          </select>
+          <small>선택 즉시 적용 · 진행 중인 거래와 운송 유지</small>
+        </div>
+      </div>
+      <div id="transitPanel" class="rt-transit-panel" hidden>
+        <strong id="transitTitle">운송 중</strong>
+        <span id="transitCountdown">도착까지 —</span>
+        <div class="progress"><div id="transitBar"></div></div>
+        <small>도착하기 전까지 거래·업그레이드·추가 이동은 할 수 없습니다.</small>
+      </div>
+      <div id="liveNotice" class="rt-live-notice">실시간 진행 · 브라우저를 닫은 동안의 경과도 재접속 시 반영</div>
+    </section>
+
+    <div class="rt-main-grid">
+      <section class="panel rt-market-panel">
+        <div class="panel-heading rt-market-heading">
+          <div>
+            <p class="section-label">LOCAL MARKET</p>
+            <h2><span id="marketCity">서울</span> 시장</h2>
+            <p id="marketSummary" class="muted"></p>
+          </div>
+          <div class="rt-quantity-control">
+            <label for="tradeQty">거래 수량
+              <input id="tradeQty" type="number" min="1" max="9999" value="5" step="1" inputmode="numeric" />
+            </label>
+            <div class="quantity-presets" role="group" aria-label="빠른 수량 선택">
+              <button class="quantity-preset" data-qty="1" type="button">1개</button>
+              <button class="quantity-preset active" data-qty="5" type="button">5개</button>
+              <button class="quantity-preset" data-qty="10" type="button">10개</button>
+            </div>
+          </div>
+        </div>
+        <div class="rt-budget-planner">
+          <label for="routeBudgetCity">이동 예정 도시
+            <select id="routeBudgetCity"></select>
+          </label>
+          <span id="routeBudgetSummary" class="rt-budget-summary"></span>
+          <label class="rt-check"><input id="keepTravelCost" type="checkbox" checked />최대 매입 시 이동비 확보</label>
+        </div>
+        <p class="rt-helper">예정 도시는 예산 계산용입니다. 실제 운송은 오른쪽 항로 버튼에서 시작합니다.</p>
+        <div id="marketList" class="rt-market-list"></div>
       </section>
 
-      <div class="game-layout">
-        <section class="panel market-panel">
-          <div class="panel-heading">
-            <div>
-              <p class="section-label">LOCAL MARKET</p>
-              <h2><span id="marketCity">서울</span> 시장</h2>
-              <p id="marketSummary" class="muted"></p>
-            </div>
-            <div class="quantity-toolbar" aria-label="거래 수량 설정">
-              <div class="quantity-shortcuts">
-                <label class="quantity-control" for="tradeQty">거래 수량
-                  <input id="tradeQty" type="number" min="1" max="9999" step="1" value="1" inputmode="numeric" />
-                </label>
-                <div class="quantity-presets" role="group" aria-label="수량 빠른 선택">
-                  <button id="qtyOneBtn" class="quantity-preset active" type="button" aria-pressed="true">1개</button>
-                  <button id="qtyFiveBtn" class="quantity-preset" type="button" aria-pressed="false">5개</button>
-                  <button id="qtyTenBtn" class="quantity-preset" type="button" aria-pressed="false">10개</button>
-                </div>
-              </div>
-              <small>수량 버튼은 모든 상품에 공통 적용됩니다.</small>
-            </div>
+      <aside class="rt-side-stack">
+        <section class="panel">
+          <div class="panel-heading compact">
+            <div><p class="section-label">CARGO</p><h2>화물칸 · 직접 판매</h2></div>
+            <strong id="cargoCount">0 / 20</strong>
           </div>
-
-          <div class="route-budget-bar" aria-label="다음 이동을 고려한 매입 예산">
-            <label class="route-budget-destination" for="routeBudgetCity">
-              이동 예정 도시
-              <select id="routeBudgetCity" aria-label="운송비 계산용 목적지"></select>
-            </label>
-            <div class="route-budget-summary" id="routeBudgetSummary" aria-live="polite"></div>
-            <label class="reserve-toggle">
-              <input id="keepTravelCost" type="checkbox" checked />
-              최대 매입 시 이동비 확보
-            </label>
+          <div class="progress"><div id="cargoBar"></div></div>
+          <div id="inventoryList" class="inventory-list"></div>
+          <div class="upgrade-box">
+            <div><strong>화물칸 +5</strong><span id="upgradeCost">₩8,000</span></div>
+            <button id="upgradeCargoBtn" class="secondary-button" type="button">확장</button>
           </div>
-          <p class="route-budget-help">예정 도시는 잔액 계산용이며, 매입해도 자동으로 이동하지 않습니다. 운송비는 현재 항로 상태를 기준으로 계산합니다.</p>
-
-          <div id="marketBody" class="market-list" aria-label="상품별 시세 및 거래"></div>
         </section>
 
-        <aside class="side-stack">
-          <section class="panel cargo-panel">
-            <div class="panel-heading compact">
-              <div>
-                <p class="section-label">CARGO</p>
-                <h2>화물칸</h2>
-              </div>
-              <strong id="cargoCount">0 / 20</strong>
-            </div>
-            <div class="progress"><div id="cargoBar"></div></div>
-            <p class="cargo-sell-help">현재 도시에서 바로 판매 · 상품마다 판매 수량을 지정하거나 전량 판매할 수 있습니다.</p>
-            <div id="inventoryList" class="inventory-list"></div>
-            <div class="upgrade-box">
-              <div>
-                <strong>화물칸 +5</strong>
-                <span id="upgradeCost">₩8,000</span>
-              </div>
-              <button id="upgradeCargoBtn" class="secondary-button" type="button">확장</button>
-            </div>
-          </section>
+        <section class="panel">
+          <p class="section-label">ROUTES</p>
+          <h2>다음 도시로 운송</h2>
+          <p class="muted rt-helper">출발하면 현재 운송비가 즉시 차감되고, 표시된 시간 후 도착합니다.</p>
+          <div id="routeList" class="route-list"></div>
+        </section>
 
-          <section class="panel travel-panel">
-            <div class="panel-heading compact">
-              <div>
-                <p class="section-label">ROUTES</p>
-                <h2>다음 도시</h2>
-              </div>
-            </div>
-            <p class="muted route-help">이동하면 날짜가 지나며 재고·수요·시세가 균형을 향해 움직입니다.</p>
-            <div id="routeList" class="route-list"></div>
-          </section>
-        </aside>
-      </div>
-
-      <section class="panel intel-panel">
-        <div class="panel-heading intel-heading">
-          <div>
-            <p class="section-label">MARKET NETWORK</p>
-            <h2>원격 시장 정보</h2>
-            <p id="intelSummary" class="muted">현재 도시 밖의 정보는 제한되거나 오래되었을 수 있습니다.</p>
+        <section class="panel">
+          <div class="panel-heading compact">
+            <div><p class="section-label">INTELLIGENCE</p><h2>원격 시세 정보</h2></div>
           </div>
-          <div class="intel-upgrade">
-            <div><span>정보망</span><strong id="intelLevelText">현지 장부 Lv.0</strong><small id="intelLevelDetail">방문한 도시의 마지막 시세만 기록</small></div>
+          <div class="rt-intel-top">
+            <span id="intelLevelText" class="muted">정보망 Lv.0</span>
             <button id="upgradeIntelBtn" class="secondary-button" type="button">정보망 확장</button>
           </div>
-        </div>
-        <div id="intelCityTabs" class="intel-city-tabs" aria-label="시장 정보 도시 선택"></div>
-        <div id="intelEmpty" class="intel-empty" hidden></div>
-        <div id="intelTableWrap" class="table-wrap">
-          <table class="intel-table">
-            <thead><tr><th>상품</th><th class="number">확인 시세</th><th>재고</th><th>수요</th><th>변화</th><th class="number">정보 시점</th></tr></thead>
-            <tbody id="intelBody"></tbody>
-          </table>
-        </div>
-      </section>
-
-      <section class="bottom-grid">
-        <article class="panel">
-          <div class="panel-heading compact">
-            <div>
-              <p class="section-label">ACTIVE EVENTS</p>
-              <h2>시장 사건</h2>
-            </div>
-          </div>
-          <div id="eventList" class="event-list"></div>
-        </article>
-
-        <article class="panel">
-          <div class="panel-heading compact">
-            <div>
-              <p class="section-label">TRADE LOG</p>
-              <h2>플레이 기록</h2>
-            </div>
-          </div>
-          <div id="tradeLog" class="trade-log"></div>
-        </article>
-      </section>
-
-      <section id="gameOverPanel" class="game-over" hidden>
-        <p class="section-label">30 DAY RESULT</p>
-        <h2>첫 거래 기간이 종료되었습니다</h2>
-        <p id="gameOverSummary"></p>
-        <div id="resultStats" class="result-grid"></div>
-        <div class="report-insights" id="resultHighlights"></div>
-        <section class="asset-history-panel" aria-labelledby="assetHistoryTitle">
-          <div class="report-heading">
-            <h3 id="assetHistoryTitle">자산 변화</h3>
-            <p>거래 또는 도시 이동 직후 관측된 날짜별 마지막 자산을 표시합니다.</p>
-          </div>
-          <svg id="assetHistoryChart" viewBox="0 0 720 215" role="img" aria-label="거래 기간 자산 변화" preserveAspectRatio="xMidYMid meet"></svg>
+          <label class="rt-intel-label" for="intelCity">시세를 확인할 도시
+            <select id="intelCity"></select>
+          </label>
+          <div id="intelList" class="rt-intel-list"></div>
         </section>
-        <div class="report-breakdown">
-          <section>
-            <h3>상품별 실현손익</h3>
-            <div id="resultProducts" class="table-wrap"></div>
-          </section>
-          <section>
-            <h3>많이 이용한 왕복 항로</h3>
-            <div id="resultRoutes" class="table-wrap"></div>
-          </section>
-        </div>
-        <p class="report-footnote">판매 실현손익은 매입원가 대비 계산합니다. 운송비와 화물칸·정보망 투자비를 각각 구분하며, 최종 자산에는 보유 화물의 현지 평가금액이 포함되므로 비용 차감 후 실현손익과 자산 증감은 다를 수 있습니다.</p>
-        <div class="report-buttons">
-          <button id="exportResultBtn" class="secondary-button" type="button">전체 플레이 기록 JSON 내보내기</button>
-          <button id="restartBtn" class="primary-button" type="button">다시 시작</button>
-        </div>
+      </aside>
+    </div>
+
+    <div class="bottom-grid">
+      <section class="panel">
+        <p class="section-label">PUBLIC EVENTS</p>
+        <h2>시장 동향</h2>
+        <div id="eventList" class="event-list"></div>
       </section>
-    </main>
-
-    <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  </div>
-
-  <script src="game-core.js"></script>
-  <script src="save-system.js"></script>
-  <script src="play-report.js"></script>
-  <script src="trade-ux.js"></script>
-  <script src="app.js"></script>
+      <section class="panel">
+        <p class="section-label">TRADE JOURNAL</p>
+        <h2>최근 행동 · 누적 성과</h2>
+        <div id="performance" class="rt-performance"></div>
+        <div id="tradeLog" class="trade-log"></div>
+      </section>
+    </div>
+  </main>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+</div>
+<script src="game-core.js"></script>
+<script src="trade-ux.js"></script>
+<script src="realtime-core.js"></script>
+<script src="realtime-app.js"></script>
 </body>
 </html>

@@ -1,0 +1,81 @@
+/* Merchant Globe v0.6 real-time sandbox */
+.rt-app { max-width: 1480px; width: min(1480px, calc(100% - 28px)); }
+.rt-app .rt-topbar { align-items: flex-start; }
+.rt-app .topbar h1 { line-height: 1.1; }
+.rt-top-actions { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; justify-content: flex-end; max-width: 620px; }
+.rt-top-actions button { padding: 7px 10px; font-size: .79rem; }
+.rt-outline-link { display: inline-flex; align-items: center; min-height: 42px; padding: 7px 10px; border: 1px solid rgba(66,214,178,.48); border-radius: 10px; color: var(--accent); text-decoration: none; font-size: .79rem; font-weight: 700; }
+.rt-outline-link:hover { background: rgba(66,214,178,.09); }
+
+.rt-clock-panel { margin-top: 14px; padding: 15px 18px; border: 1px solid rgba(66,214,178,.37); background: rgba(13,26,43,.92); border-radius: 15px; display: grid; gap: 10px; }
+.rt-clock-info { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
+.rt-clock-info h2 { margin: 4px 0 1px; font-size: 1.15rem; }
+.rt-new-speed { display: grid; gap: 3px; color: var(--muted); font-size: .71rem; }
+.rt-new-speed select { min-width: 210px; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 9px; padding: 8px 9px; min-height: 39px; }
+.rt-new-speed small { color: var(--muted); }
+.rt-transit-panel { display: grid; grid-template-columns: auto auto; gap: 5px 12px; align-items: center; }
+.rt-transit-panel[hidden] { display: none; }
+.rt-transit-panel strong { font-size: .9rem; }
+.rt-transit-panel > span { font-weight: 750; text-align: right; color: var(--accent); }
+.rt-transit-panel .progress { margin: 4px 0; grid-column: 1 / -1; }
+.rt-transit-panel small { grid-column: 1 / -1; color: var(--muted); }
+.rt-live-notice { color: var(--muted); font-size: .75rem; }
+.rt-main-grid { display: grid; grid-template-columns: minmax(0,1.6fr) minmax(300px,.7fr); gap: 14px; margin-top: 14px; align-items: start; }
+.rt-side-stack { display: grid; gap: 14px; min-width: 0; }
+.rt-market-panel { min-width: 0; }
+.rt-market-heading { align-items: flex-start; flex-wrap: wrap; }
+.rt-quantity-control { display: flex; flex-wrap: wrap; align-items: end; justify-content: flex-end; gap: 8px; }
+.rt-quantity-control > label { display: grid; gap: 4px; font-size: .74rem; color: var(--muted); }
+.rt-quantity-control input { width: 77px; min-height: 39px; border: 1px solid var(--border); background: var(--bg); border-radius: 8px; padding: 6px 9px; color: var(--text); }
+.rt-budget-planner { display: flex; flex-wrap: wrap; align-items: center; gap: 9px 12px; background: rgba(7,17,31,.55); padding: 11px; border: 1px solid var(--border); border-radius: 11px; }
+.rt-budget-planner > label:not(.rt-check) { display: grid; gap: 4px; color: var(--muted); font-size: .72rem; }
+.rt-budget-planner select { background: var(--bg); color: var(--text); min-height: 39px; border: 1px solid var(--border); border-radius: 8px; padding: 7px 8px; min-width: 135px; }
+.rt-budget-summary { flex: 1 1 170px; font-size: .77rem; color: #c8d7e7; }
+.rt-check { display: inline-flex; align-items: center; gap: 7px; font-size: .75rem; white-space: normal; cursor: pointer; }
+.rt-check input { width: 17px; height: 17px; accent-color: var(--accent); }
+.rt-helper { font-size: .75rem; line-height: 1.45; }
+.rt-market-list { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(100%,310px),1fr)); gap: 9px; }
+.rt-product-card { display: grid; align-content: start; gap: 7px; min-width: 0; padding: 12px; background: rgba(7,17,31,.55); border: 1px solid var(--border); border-radius: 13px; }
+.rt-product-head { display: flex; justify-content: space-between; align-items: start; min-width: 0; gap: 8px; }
+.rt-product-head > div:first-child { min-width: 0; }
+.rt-product-head strong { display: block; font-size: .99rem; }
+.rt-product-head small { display: block; font-size: .7rem; color: var(--muted); }
+.rt-product-price { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.rt-product-price strong { font-size: 1.03rem; }
+.rt-product-price small { font-weight: 700; font-size: .69rem; }
+.rt-metrics { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 5px; padding: 8px; border-radius: 9px; background: rgba(22,38,57,.63); }
+.rt-metrics span { font-size: .66rem; color: var(--muted); overflow-wrap: anywhere; }
+.rt-metrics strong { display: block; font-size: .73rem; color: var(--text); font-variant-numeric: tabular-nums; }
+.rt-metrics strong.positive { color: var(--positive); }
+.rt-metrics strong.negative { color: var(--danger); }
+.rt-pair { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 6px; margin-top: 3px; }
+.rt-pair button { min-width: 0; min-height: 37px; padding: 5px 8px; font-size: .74rem; border-radius: 9px; white-space: normal; line-height: 1.3; overflow-wrap: anywhere; font-weight: 700; }
+.rt-quote { font-size: .69rem; line-height: 1.48; color: #b6c9e0; margin: 0; overflow-wrap: anywhere; }
+.rt-buy-quote { color: #bce5de; }
+.rt-disabled-note { padding: 28px 18px; border: 1px dashed var(--border); border-radius: 12px; text-align: center; color: var(--muted); }
+.rt-app .cargo-item { padding: 10px; }
+.rt-app .cargo-sale-buttons button { min-height: 38px; }
+.rt-app .cargo-item-heading small { overflow-wrap: anywhere; }
+.rt-app .inventory-list { margin-top: 10px; }
+.rt-intel-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; margin: 12px 0; }
+.rt-intel-top button { padding: 6px 9px; font-size: .74rem; }
+.rt-intel-label { display: block; color: var(--muted); font-size: .73rem; margin-bottom: 5px; }
+.rt-intel-label select { display: block; width: 100%; margin-top: 3px; min-height: 39px; border: 1px solid var(--border); color: var(--text); background: var(--bg); border-radius: 9px; padding: 6px 8px; }
+.rt-intel-list { display: grid; gap: 4px; padding: 8px 0; color: var(--muted); font-size: .76rem; max-height: 220px; overflow-y: auto; }
+.rt-intel-row { padding: 5px 7px; border: 1px solid rgba(34,53,82,.5); border-radius: 7px; color: #d8e7f7; }
+.rt-performance { margin: 10px 0; padding: 10px; border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-size: .75rem; line-height: 1.6; }
+.rt-app .event-list, .rt-app .trade-log { margin-top: 10px; }
+.rt-app .route-button { min-height: 55px; }
+.rt-app button:focus-visible, .rt-app input:focus-visible, .rt-app select:focus-visible, .rt-outline-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media(max-width:1120px) { .rt-main-grid { grid-template-columns: 1fr; } .rt-side-stack { grid-template-columns: repeat(2,minmax(0,1fr)); } }
+@media(max-width:720px) {
+  .rt-app { width: calc(100% - 18px); }
+  .rt-topbar { flex-wrap: wrap; }
+  .rt-top-actions { justify-content: flex-start; }
+  .rt-side-stack, .bottom-grid { grid-template-columns: 1fr; }
+  .rt-market-heading { display: grid; }
+  .rt-quantity-control { justify-content: flex-start; }
+  .rt-clock-info { align-items: flex-start; }
+  .rt-new-speed select { width: 100%; }
+  .rt-market-list { grid-template-columns: 1fr; }
+}

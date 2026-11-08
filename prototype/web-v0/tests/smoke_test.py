@@ -54,10 +54,26 @@ def main() -> None:
         health = json.loads(health_text)
         assert health["ok"] is True
         assert health["service"] == "merchant-globe-mvp"
-        assert health["version"] == "0.4.0"
+        assert health["version"] == "0.6.0"
+
+        config = json.loads(read_url("/api/config"))
+        assert config["mode"] == "realtime"
+        assert config["maxDay"] is None
+        assert config["classicMaxDay"] == 30
 
         index = read_url("/")
         assert "Merchant Globe" in index
+        assert "realtime-core.js" in index
+        assert "realtime-app.js" in index
+        assert "classic.html" in index
+
+        classic = read_url("/classic.html")
+        assert "save-system.js" in classic
+        assert "app.js" in classic
+
+        assert "RealtimeSession" in read_url("/realtime-core.js")
+        assert "renderMarket" in read_url("/realtime-app.js")
+        assert "rt-clock-panel" in read_url("/realtime.css")
 
         print("Smoke test passed.")
         print(json.dumps(health, ensure_ascii=False))
