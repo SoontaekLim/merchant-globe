@@ -7,12 +7,15 @@
   const TradeUX = window.MerchantGlobeTradeUX;
   const SAVE_KEY = 'merchant-globe.mvp.save.v1';
   const INTEL_VIEW_KEY = 'merchant-globe.mvp.intel-views.v1';
+  const TRADE_CONTROL_KEY = 'merchant-globe.mvp.trade-controls.v1';
 
   let gameSeed = Date.now();
   let actionHistory = [];
   let game = new Game({ maxDay: 30, seed: gameSeed });
   let playReport = null;
   let intelViews = [];
+  let tradeControls = [];
+  let selectedQuantityMode = 'preset_1';
   let selectedIntelCity = 'busan';
   let toastTimer = null;
 
@@ -78,6 +81,41 @@
     storeIntelViews();
   }
 
+  function storeTradeControls() {
+    try {
+      localStorage.setItem(TRADE_CONTROL_KEY, JSON.stringify({ seed: gameSeed, entries: tradeControls }));
+    } catch (error) {
+      console.warn('Merchant Globe trade-control log save failed:', error);
+    }
+  }
+
+  function restoreTradeControls() {
+    tradeControls = [];
+    try {
+      const saved = localStorage.getItem(TRADE_CONTROL_KEY);
+      if (!saved) return;
+      const data = JSON.parse(saved);
+      if (String(data.seed) === String(gameSeed) && Array.isArray(data.entries)) {
+        tradeControls = TradeUX.summarizeControls(actionHistory, data.entries.slice(-2000)).entries;
+      }
+    } catch (error) {
+      console.warn('Merchant Globe trade-control log restore failed:', error);
+    }
+  }
+
+  function trackTradeControl(side, productId, quantity, control) {
+    const entry = TradeUX.createControlEntry({
+      actionIndex: actionHistory.length + 1,
+      day: game.day,
+      cityId: game.cityId,
+      side, productId, quantity, control
+    });
+    entry.clickedAt = new Date().toISOString();
+    tradeControls.push(entry);
+    tradeControls = tradeControls.slice(-2000);
+    storeTradeControls();
+  }
+
   function refreshPlayReport() {
     try {
       playReport = ReportSystem.buildReport({
@@ -103,7 +141,13 @@
         exportedAt: new Date().toISOString(),
         report: playReport,
         actions: actionHistory,
-        intelViews
+        intelViews,
+        tradeControls: TradeUX.summarizeControls(actionHistory, tradeControls).entries,
+        tradeControlSummary: (() => {
+          const summary = TradeUX.summarizeControls(actionHistory, tradeControls);
+          return { totalTrades: summary.totalTrades, trackedTrades: summary.trackedTrades,
+            untrackedTrades: summary.untrackedTrades, counts: summary.counts };
+        })()
       };
       const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' });
       const url = URL.createObjectURL(blob);
@@ -175,7 +219,9 @@
     try {
       localStorage.removeItem(SAVE_KEY);
       localStorage.removeItem(INTEL_VIEW_KEY);
+      localStorage.removeItem(TRADE_CONTROL_KEY);
       intelViews = [];
+      tradeControls = [];
       updateSaveStatus(false);
       showToast('저장 데이터를 삭제했습니다. 다음 거래부터 다시 자동저장됩니다.');
     } catch (error) {
@@ -200,16 +246,19 @@
   }
 
   function setTradeQuantity(qty) {
-    el('tradeQty').value = String(TradeUX.normalizeQuantity(qty));
+    const amount = TradeUX.normalizeQuantity(qty);
+    selectedQuantityMode = [1, 5, 10].includes(amount) ? 'preset_' + amount : 'custom';
+    el('tradeQty').value = String(amount);
     refreshTradeQuotes();
   }
 
   function refreshTradeQuotes() {
     const qty = TradeUX.normalizeQuantity(el('tradeQty').value);
-    [['qtyOneBtn', 1], ['qtyFiveBtn', 5]].forEach(([id, amount]) => {
+    [['qtyOneBtn', 1], ['qtyFiveBtn', 5], ['qtyTenBtn', 10]].forEach(([id, amount]) => {
       const button = el(id);
-      button.setAttribute('aria-pressed', String(amount === qty));
-      button.classList.toggle('active', amount === qty);
+      const active = selectedQuantityMode === 'preset_' + amount && amount === qty;
+      button.setAttribute('aria-pressed', String(active));
+      button.classList.toggle('active', active);
     });
 
     el('marketBody').querySelectorAll('tr[data-product-id]').forEach((tr) => {
@@ -320,13 +369,14 @@
           <div class="trade-preview"><span class="trade-preview-line buy-preview"></span><span class="trade-preview-line sell-preview"></span></div>
         </td>`;
 
-      function executeTrade(side, qty) {
+      function executeTrade(side, qty, control) {
         if (!qty || qty < 1) return;
         const result = safeAction(() => side === 'buy'
           ? game.buy(product.id, qty)
           : game.sell(product.id, qty));
         if (!result) return;
 
+        trackTradeControl(side, product.id, qty, control);
         recordAction({ type: side, productId: product.id, qty });
         if (side === 'buy') {
           showToast(product.name + ' ' + qty + '개 매입 ' + money(result.total) +
@@ -341,15 +391,15 @@
         }
       }
 
-      tr.querySelector('.buy-button').addEventListener('click', () => executeTrade('buy', tradeQuantity()));
-      tr.querySelector('.sell-button').addEventListener('click', () => executeTrade('sell', tradeQuantity()));
+      tr.querySelector('.buy-button').addEventListener('click', () => executeTrade('buy', tradeQuantity(), selectedQuantityMode));
+      tr.querySelector('.sell-button').addEventListener('click', () => executeTrade('sell', tradeQuantity(), selectedQuantityMode));
       tr.querySelector('.buy-max-button').addEventListener('click', () => {
         const qty = TradeUX.quote(game, product.id, 1).buy.maxQuantity;
-        executeTrade('buy', qty);
+        executeTrade('buy', qty, 'max_buy');
       });
       tr.querySelector('.sell-all-button').addEventListener('click', () => {
         const qty = TradeUX.quote(game, product.id, 1).sell.maxQuantity;
-        executeTrade('sell', qty);
+        executeTrade('sell', qty, 'sell_all');
       });
       body.appendChild(tr);
     });
@@ -602,6 +652,8 @@
     }
 
     const stats = report.stats;
+    const controls = TradeUX.summarizeControls(actionHistory, tradeControls);
+    const costs = report.investmentCosts;
     el('gameOverSummary').textContent =
       '30일 동안 ' + stats.trips + '번 이동하고 ' + (stats.buys + stats.sells) + '번 거래했습니다. 방문한 도시는 ' +
       Object.keys(report.cityVisits).length + '곳입니다.';
@@ -612,10 +664,20 @@
       '<div><span>자산 증감</span><strong class="' + (report.netAssetsChange >= 0 ? 'positive' : 'negative') + '">' + signedMoney(report.netAssetsChange) + '</strong></div>' +
       '<div><span>판매 실현손익</span><strong class="' + (stats.realizedProfit >= 0 ? 'positive' : 'negative') + '">' + signedMoney(stats.realizedProfit) + '</strong></div>' +
       '<div><span>총 운송비</span><strong>' + money(stats.transportCost) + '</strong></div>' +
+      '<div><span>운송비 차감 실현손익</span><strong class="' + (report.realizedAfterTransport >= 0 ? 'positive' : 'negative') + '">' + signedMoney(report.realizedAfterTransport) + '</strong></div>' +
+      '<div><span>화물칸 투자비</span><strong>' + money(costs.cargo) + '</strong></div>' +
+      '<div><span>정보망 투자비</span><strong>' + money(costs.intel) + '</strong></div>' +
+      '<div><span>투자비 차감 후 실현손익</span><strong class="' + (report.realizedAfterExpenses >= 0 ? 'positive' : 'negative') + '">' + signedMoney(report.realizedAfterExpenses) + '</strong></div>' +
       '<div><span>매입·판매 물량</span><strong>' + (stats.unitsBought + stats.unitsSold) + '개</strong></div>' +
       '<div><span>도시 방문</span><strong>' + Object.keys(report.cityVisits).length + '곳</strong></div>' +
       '<div><span>업그레이드</span><strong>화물 ' + report.upgrades.cargo + ' · 정보 ' + report.upgrades.intel + '</strong></div>' +
-      '<div><span>원격 시장 조회</span><strong>' + intelViews.filter((row) => row.targetCityId !== row.fromCityId).length + '회</strong></div>';
+      '<div><span>원격 시장 조회</span><strong>' + intelViews.filter((row) => row.targetCityId !== row.fromCityId).length + '회</strong></div>' +
+      '<div><span>거래 버튼 기록</span><strong>' + controls.trackedTrades + ' / ' + controls.totalTrades +
+        '회 (기존 기록 ' + controls.untrackedTrades + '회)</strong></div>' +
+      '<div><span>빠른 수량 선택</span><strong>1개 ' + controls.counts.preset_1 +
+        ' · 5개 ' + controls.counts.preset_5 + ' · 10개 ' + controls.counts.preset_10 + '회</strong></div>' +
+      '<div><span>기타 거래 입력</span><strong>직접 ' + controls.counts.custom + ' · 최대 매입 ' +
+        controls.counts.max_buy + ' · 전량 판매 ' + controls.counts.sell_all + '회</strong></div>';
 
     const best = report.bestSale;
     const worst = report.worstSale;
@@ -691,7 +753,11 @@
     game = new Game({ maxDay: 30, seed: gameSeed });
     selectedIntelCity = 'busan';
     intelViews = [];
+    tradeControls = [];
+    selectedQuantityMode = 'preset_1';
+    setTradeQuantity(1);
     storeIntelViews();
+    storeTradeControls();
     refreshPlayReport();
     el('newsTitle').textContent = '시장 정보';
     el('newsText').textContent = '도시 생산·소비, 상품 특성, 항로 상태를 함께 보세요. 같은 가격 차이도 상황에 따라 수익성이 달라집니다.';
@@ -700,13 +766,17 @@
     showToast('새로운 30일 무역을 시작했습니다.');
   }
 
-  el('tradeQty').addEventListener('input', refreshTradeQuotes);
+  el('tradeQty').addEventListener('input', () => {
+    selectedQuantityMode = 'custom';
+    refreshTradeQuotes();
+  });
   el('tradeQty').addEventListener('change', () => {
     tradeQuantity();
     refreshTradeQuotes();
   });
   el('qtyOneBtn').addEventListener('click', () => setTradeQuantity(1));
   el('qtyFiveBtn').addEventListener('click', () => setTradeQuantity(5));
+  el('qtyTenBtn').addEventListener('click', () => setTradeQuantity(10));
   el('upgradeCargoBtn').addEventListener('click', () => {
     const result = safeAction(() => game.upgradeCargo());
     if (result) {
@@ -731,6 +801,7 @@
   const restored = loadSavedGame();
   if (!restored) saveGame(false);
   restoreIntelViews();
+  restoreTradeControls();
   refreshPlayReport();
   render();
 
