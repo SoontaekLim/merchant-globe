@@ -235,3 +235,83 @@ tr:last-child td { border-bottom: 0; }
   .quantity-shortcuts { justify-content: flex-start; }
   .quantity-toolbar > small { text-align: left; }
 }
+
+/* 0.5.1 hotfix: keep trading controls visible inside the wide market table.
+   The nine-column table is wider than its panel at desktop widths below 1280px. */
+.market-panel { min-width: 0; }
+.market-panel > .table-wrap { max-width: 100%; }
+.market-table th:last-child,
+.market-table td.trade-cell {
+  position: sticky;
+  right: 0;
+  z-index: 2;
+  background: #0d1a2b;
+  box-shadow: -10px 0 18px rgba(4, 12, 23, .85), -1px 0 0 var(--border);
+}
+.market-table th:last-child { z-index: 3; }
+.market-table td.trade-cell { width: 276px; min-width: 276px; }
+.market-table .trade-action-side > button { white-space: nowrap; }
+.market-table .trade-action-side > button:focus-visible,
+.market-table .quantity-preset:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* On narrow viewports, avoid a 276px sticky overlay that would cover prices.
+   Show each product as a compact self-contained trade card instead. */
+@media (max-width: 760px) {
+  .market-panel > .table-wrap { overflow-x: visible; }
+  .market-table { display: block; width: 100%; min-width: 0; }
+  .market-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .market-table tbody { display: grid; gap: 10px; }
+  .market-table tr {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 5px 12px;
+    background: rgba(7, 17, 31, .50);
+    border: 1px solid var(--border);
+    border-radius: 13px;
+    padding: 11px;
+  }
+  .market-table td {
+    display: block;
+    min-width: 0;
+    padding: 3px 0;
+    border-bottom: 0;
+    text-align: left;
+    overflow-wrap: anywhere;
+  }
+  .market-table td:first-child {
+    grid-column: 1 / -1;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 10px;
+    margin-bottom: 2px;
+  }
+  .market-table td:not(:first-child):not(.trade-cell)::before {
+    content: attr(data-label);
+    display: block;
+    color: var(--muted);
+    font-size: .69rem;
+    margin-bottom: 2px;
+  }
+  .market-table td.trade-cell {
+    grid-column: 1 / -1;
+    width: auto;
+    min-width: 0;
+    position: static;
+    box-shadow: none;
+    background: transparent;
+    border-top: 1px solid var(--border);
+    margin-top: 6px;
+    padding-top: 10px;
+  }
+  .market-table .trade-action-side > button { min-height: 42px; }
+  .market-table .trade-preview-line { font-size: .74rem; }
+}
