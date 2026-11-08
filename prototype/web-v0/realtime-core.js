@@ -120,6 +120,20 @@
       return { ticks, arrived, nowMs: this.nowMs };
     }
 
+    // Use bounded batches when catching up a long offline interval.
+    // The ordinary advanceTo() API retains its large-call safety guard.
+    advanceTowards(targetMs, maxTicks) {
+      integer(targetMs, '현재 시각', 0);
+      const budget = integer(maxTicks == null ? 250 : maxTicks, '복구 단계 크기', 1, 10000);
+      if (targetMs <= this.nowMs) return {
+        ticks: 0, arrived: false, nowMs: this.nowMs, complete: true
+      };
+      const boundary = this.nextTickAtMs() + (budget - 1) * this.msPerDay;
+      const cutoff = Math.min(targetMs, boundary);
+      const result = this.advanceTo(cutoff);
+      return { ...result, complete: this.nowMs >= targetMs };
+    }
+
     // Adjust the active clock without discarding fractional progress through
     // the current economic day. Also rescale an in-flight voyage's remaining
     // time; route costs and the number of remaining game days do not change.
@@ -370,7 +384,7 @@
     return true;
   }
 
-  function restoreSave(payload, GameClass, nowMs) {
+  function restoreSave(payload, GameClass, nowMs, options) {
     validateSave(payload);
     const session = new RealtimeSession({
       GameClass, seed: payload.seed,
@@ -398,7 +412,9 @@
       throw new Error('저장된 경제 속도 변경 기록이 일치하지 않습니다.');
     }
     // A backward system clock must not reverse already-observed economic time.
-    session.advanceTo(Math.max(payload.observedAtMs, nowMs == null ? payload.observedAtMs : nowMs));
+    const target = Math.max(payload.observedAtMs, nowMs == null ? payload.observedAtMs : nowMs);
+    if (options && options.catchUpTicks != null) session.advanceTowards(target, options.catchUpTicks);
+    else session.advanceTo(target);
     return session;
   }
 
