@@ -16,6 +16,7 @@
   let intelViews = [];
   let tradeControls = [];
   let selectedQuantityMode = 'preset_1';
+  let plannedDestinationId = null;
   let selectedIntelCity = 'busan';
   let toastTimer = null;
 
@@ -252,8 +253,43 @@
     refreshTradeQuotes();
   }
 
+  function renderRouteBudget() {
+    const routes = Object.keys(CITIES)
+      .filter((id) => id !== game.cityId)
+      .map((id) => ({ cityId: id, route: game.routeInfo(game.cityId, id) }))
+      .filter((row) => Boolean(row.route))
+      .sort((a, b) => a.route.cost - b.route.cost || a.cityId.localeCompare(b.cityId));
+
+    if (!routes.some((row) => row.cityId === plannedDestinationId)) {
+      plannedDestinationId = routes.length ? routes[0].cityId : null;
+    }
+    const select = el('routeBudgetCity');
+    select.replaceChildren();
+    routes.forEach(({ cityId, route }) => {
+      const option = document.createElement('option');
+      option.value = cityId;
+      option.textContent = CITIES[cityId].name + ' · ' + money(route.cost);
+      select.appendChild(option);
+    });
+    select.disabled = !routes.length;
+    if (plannedDestinationId) select.value = plannedDestinationId;
+
+    const chosen = routes.find((row) => row.cityId === plannedDestinationId);
+    const description = el('routeBudgetSummary');
+    if (!chosen) {
+      description.textContent = '현재 이동 가능한 항로가 없습니다.';
+      return;
+    }
+    const remaining = game.cash - chosen.route.cost;
+    description.textContent = '현재 현금 ' + money(game.cash) + ' · ' + CITIES[chosen.cityId].name +
+      ' 운송비 ' + money(chosen.route.cost) + ' (' + chosen.route.days + '일) · ' +
+      (remaining >= 0 ? '이동비 제외 매입 예산 ' + money(remaining) : '이동비 부족 ' + money(-remaining));
+    description.classList.toggle('insufficient', remaining < 0);
+  }
+
   function refreshTradeQuotes() {
     const qty = TradeUX.normalizeQuantity(el('tradeQty').value);
+    const reserve = el('keepTravelCost').checked;
     [['qtyOneBtn', 1], ['qtyFiveBtn', 5], ['qtyTenBtn', 10]].forEach(([id, amount]) => {
       const button = el(id);
       const active = selectedQuantityMode === 'preset_' + amount && amount === qty;
@@ -261,57 +297,107 @@
       button.classList.toggle('active', active);
     });
 
-    el('marketBody').querySelectorAll('tr[data-product-id]').forEach((tr) => {
-      const productId = tr.dataset.productId;
+    el('marketBody').querySelectorAll('.market-product-card[data-product-id]').forEach((card) => {
+      const productId = card.dataset.productId;
       const product = game.getProduct(productId);
-      const quote = TradeUX.quote(game, productId, qty);
-      const buy = tr.querySelector('.buy-button');
-      const buyMax = tr.querySelector('.buy-max-button');
-      const sell = tr.querySelector('.sell-button');
-      const sellAll = tr.querySelector('.sell-all-button');
-      const buyPreview = tr.querySelector('.buy-preview');
-      const sellPreview = tr.querySelector('.sell-preview');
+      const plan = TradeUX.tradeBudget(game, productId, qty, plannedDestinationId);
+      const maxQty = reserve ? plan.maxWithTransport : plan.maxWithoutTransport;
+      const buy = card.querySelector('.buy-button');
+      const maxBuy = card.querySelector('.buy-max-button');
+      const sell = card.querySelector('.sell-button');
+      const sellAll = card.querySelector('.sell-all-button');
+      const buyPreview = card.querySelector('.buy-preview');
+      const buyBalance = card.querySelector('.buy-balance');
+      const buyTravel = card.querySelector('.buy-travel');
+      const maxPreview = card.querySelector('.max-preview');
+      const sellPreview = card.querySelector('.sell-preview');
+      const sellBalance = card.querySelector('.sell-balance');
+      const sellAllPreview = card.querySelector('.sell-all-preview');
 
-      buy.disabled = !quote.buy.allowed;
-      sell.disabled = !quote.sell.allowed;
-      buyMax.disabled = quote.buy.maxQuantity === 0;
-      sellAll.disabled = quote.sell.maxQuantity === 0;
+      buy.disabled = !plan.buy.allowed;
+      sell.disabled = !plan.sell.allowed;
+      maxBuy.disabled = maxQty <= 0;
+      sellAll.disabled = plan.sell.maxQuantity <= 0;
 
       buy.textContent = '매입 ' + qty + '개';
       sell.textContent = '판매 ' + qty + '개';
-      buyMax.textContent = '최대 ' + quote.buy.maxQuantity + '개';
-      sellAll.textContent = '전량 ' + quote.sell.maxQuantity + '개';
-      buyMax.setAttribute('aria-label', product.name + ' 최대 ' + quote.buy.maxQuantity + '개 매입');
-      sellAll.setAttribute('aria-label', product.name + ' 전량 ' + quote.sell.maxQuantity + '개 판매');
+      maxBuy.textContent = (reserve ? '이동비 확보 최대 ' : '최대 매입 ') + maxQty + '개';
+      sellAll.textContent = '전량 판매 ' + plan.sell.maxQuantity + '개';
+      maxBuy.setAttribute('aria-label', product.name + ' ' + (reserve ? '이동비 확보 최대 ' : '최대 ') + maxQty + '개 매입');
+      sellAll.setAttribute('aria-label', product.name + ' 전량 ' + plan.sell.maxQuantity + '개 판매');
 
-      if (quote.buy.allowed) {
-        buyPreview.textContent = '매입 예상 ' + money(quote.buy.total) +
-          ' (평균 ' + money(quote.buy.unitPrice) + '/개)';
+      function setTravelLabel(element, afterTravel) {
+        if (afterTravel == null) {
+          element.textContent = '';
+          element.className = 'trade-preview-line';
+          return;
+        }
+        element.textContent = afterTravel >= 0
+          ? CITIES[plannedDestinationId].name + ' 이동 후 ' + money(afterTravel)
+          : CITIES[plannedDestinationId].name + ' 운송비 부족 ' + money(-afterTravel);
+        element.className = 'trade-preview-line ' + (afterTravel >= 0 ? 'positive' : 'negative');
+      }
+
+      if (plan.buy.allowed) {
+        buyPreview.textContent = '매입 예상 ' + money(plan.buy.total) +
+          ' · 평균 ' + money(plan.buy.unitPrice) + '/개';
         buyPreview.className = 'trade-preview-line buy-preview';
+        buyBalance.textContent = '매입 후 현금 ' + money(plan.buy.cashAfter);
+        setTravelLabel(buyTravel, plan.buy.cashAfterTransport);
       } else {
-        buyPreview.textContent = '매입 불가 · ' + (quote.buy.reason || '최대 ' + quote.buy.maxQuantity + '개');
+        buyPreview.textContent = '매입 불가 · ' + (plan.buy.reason || '수량 초과');
         buyPreview.className = 'trade-preview-line buy-preview unavailable';
-      }
-      if (quote.sell.allowed) {
-        sellPreview.textContent = '판매 예상 ' + money(quote.sell.revenue) +
-          ' · 손익 ' + signedMoney(quote.sell.profit);
-        sellPreview.className = 'trade-preview-line sell-preview';
-      } else {
-        sellPreview.textContent = '판매 불가 · ' + (quote.sell.reason || '보유 수량 부족');
-        sellPreview.className = 'trade-preview-line sell-preview unavailable';
+        buyBalance.textContent = '';
+        setTravelLabel(buyTravel, null);
       }
 
-      if (quote.buy.maxQuantity > 0) {
-        const maxBuy = TradeUX.quote(game, productId, quote.buy.maxQuantity);
-        buyMax.title = '예상 매입 총액 ' + money(maxBuy.buy.total);
+      if (maxQty > 0) {
+        const maxQuote = TradeUX.quote(game, productId, maxQty).buy;
+        const afterBuy = game.cash - maxQuote.total;
+        const afterTravel = afterBuy - plan.route.cost;
+        maxPreview.textContent = maxQty + '개 매입 ' + money(maxQuote.total) +
+          ' → 현금 ' + money(afterBuy) +
+          (afterTravel >= 0 ? ' → 이동 후 ' + money(afterTravel)
+            : ' → 이동비 부족 ' + money(-afterTravel));
+        maxPreview.className = 'trade-preview-line max-preview ' + (afterTravel >= 0 ? '' : 'negative');
+        maxBuy.title = maxPreview.textContent;
       } else {
-        buyMax.title = quote.buy.reason || '매입 불가';
+        maxPreview.textContent = reserve && plan.maxWithoutTransport > 0
+          ? '이동비를 확보하면서 살 수 있는 수량이 없습니다. 목적지 또는 확보 옵션을 변경하세요.'
+          : '매입 가능한 수량이 없습니다.';
+        maxPreview.className = 'trade-preview-line max-preview unavailable';
+        maxBuy.title = maxPreview.textContent;
       }
-      if (quote.sell.maxQuantity > 0) {
-        const allSell = TradeUX.quote(game, productId, quote.sell.maxQuantity);
-        sellAll.title = '예상 판매 ' + money(allSell.sell.revenue) +
-          ' · 실현손익 ' + signedMoney(allSell.sell.profit);
+
+      if (plan.sell.allowed) {
+        sellPreview.textContent = '판매 예상 ' + money(plan.sell.revenue) +
+          ' · 실현손익 ' + signedMoney(plan.sell.profit);
+        sellPreview.className = 'trade-preview-line sell-preview';
+        sellBalance.textContent = '판매 후 현금 ' + money(plan.sell.cashAfter) +
+          ' · ' + CITIES[plannedDestinationId].name + ' 이동 후 ' +
+          (plan.sell.cashAfterTransport >= 0 ? money(plan.sell.cashAfterTransport)
+            : '운송비 부족 ' + money(-plan.sell.cashAfterTransport));
+        sellBalance.className = 'trade-preview-line sell-balance ' +
+          (plan.sell.cashAfterTransport >= 0 ? '' : 'negative');
       } else {
+        sellPreview.textContent = '판매 불가 · ' + (plan.sell.reason || '보유 수량 부족');
+        sellPreview.className = 'trade-preview-line sell-preview unavailable';
+        sellBalance.textContent = '';
+      }
+
+      if (plan.sell.maxQuantity > 0) {
+        const allQuote = TradeUX.quote(game, productId, plan.sell.maxQuantity).sell;
+        const after = game.cash + allQuote.revenue;
+        const afterTravel = after - plan.route.cost;
+        sellAllPreview.textContent = '전량 ' + plan.sell.maxQuantity + '개 판매 ' +
+          money(allQuote.revenue) + ' → 현금 ' + money(after) +
+          (afterTravel >= 0 ? ' → 이동 후 ' + money(afterTravel)
+            : ' → 이동비 부족 ' + money(-afterTravel));
+        sellAllPreview.className = 'trade-preview-line sell-all-preview ' + (afterTravel >= 0 ? '' : 'negative');
+        sellAll.title = sellAllPreview.textContent;
+      } else {
+        sellAllPreview.textContent = '전량 판매할 재고가 없습니다.';
+        sellAllPreview.className = 'trade-preview-line sell-all-preview unavailable';
         sellAll.title = '판매할 재고가 없습니다';
       }
     });
@@ -336,9 +422,13 @@
     const city = CITIES[game.cityId];
     el('marketCity').textContent = city.name;
     const profile = cityProfileText(city);
-    el('marketSummary').textContent = `${city.summary}${profile ? ` · ${profile}` : ''} · 재고와 수요가 실제 생산·소비 성향에 따라 회복됩니다.`;
+    el('marketSummary').textContent = city.summary +
+      (profile ? ' · ' + profile : '') +
+      ' · 재고와 수요는 실제 생산·소비 성향에 따라 회복됩니다.';
+
+    renderRouteBudget();
     const body = el('marketBody');
-    body.innerHTML = '';
+    body.replaceChildren();
 
     PRODUCTS.forEach((product) => {
       const info = game.marketInfo(game.cityId, product.id);
@@ -349,25 +439,59 @@
       const heldProfitRate = item.qty > 0 ? ((heldUnitValue / item.avgCost) - 1) * 100 : null;
       const stockPct = Math.round(info.stockRatio * 100);
       const demandPct = Math.round(info.demandRatio * 100);
+      const heldClass = heldProfitRate == null ? 'neutral' : heldProfitRate > 0 ? 'positive' : heldProfitRate < 0 ? 'negative' : 'neutral';
+      const deviationClass = deviation > 1 ? 'positive' : deviation < -1 ? 'negative' : 'neutral';
 
-      const tr = document.createElement('tr');
-      tr.dataset.productId = product.id;
-      tr.innerHTML = `
-        <td><span class="product-name">${product.name}</span><span class="trait-chip trait-${product.trait}">${product.traitLabel}</span><span class="price-note">기준 ${money(product.basePrice)} · 화물 ${product.cargoSize || 1}칸${product.trait === 'perishable' ? ' · 이동 시 신선도 하락' : ''}</span></td>
-        <td class="number" data-label="현재가"><strong>${money(info.price)}</strong></td>
-        <td class="number" data-label="시장 재고"><span class="market-chip ${stateClass(info.stockLabel)}">${info.stock}개 · ${info.stockLabel}</span><span class="price-note">평시 ${info.targetStock}개 (${stockPct}%)</span></td>
-        <td class="number" data-label="수요"><span class="market-chip ${stateClass(info.demandLabel)}">${info.demandLabel}</span><span class="price-note">평시 대비 ${demandPct}%</span></td>
-        <td data-label="기준가 대비" class="number ${deviation > 1 ? 'positive' : deviation < -1 ? 'negative' : 'neutral'}">${pct(deviation)}</td>
-        <td class="number" data-label="보유 수량">${item.qty}</td>
-        <td class="number" data-label="평균 매입가">${item.qty ? money(item.avgCost) : '—'}</td>
-        <td data-label="보유 손익" class="number ${heldProfitRate != null && heldProfitRate > 0 ? 'positive' : heldProfitRate != null && heldProfitRate < 0 ? 'negative' : 'neutral'}">${heldProfitRate == null ? '—' : pct(heldProfitRate)}</td>
-        <td class="trade-cell">
-          <div class="trade-actions">
-            <div class="trade-action-side"><button class="buy-button" type="button">매입</button><button class="buy-max-button" type="button">최대 매입</button></div>
-            <div class="trade-action-side"><button class="sell-button" type="button">판매</button><button class="sell-all-button" type="button">전량 판매</button></div>
+      const card = document.createElement('article');
+      card.className = 'market-product-card';
+      card.dataset.productId = product.id;
+      card.setAttribute('aria-label', product.name + ' 시세와 거래');
+      card.innerHTML = `
+        <div class="market-product-header">
+          <div class="market-product-identity">
+            <div><strong class="product-name">${product.name}</strong><span class="trait-chip trait-${product.trait}">${product.traitLabel}</span></div>
+            <span class="price-note">기본가 ${money(product.basePrice)} · 화물 ${product.cargoSize || 1}칸${product.trait === 'perishable' ? ' · 운송 시 신선도 하락' : ''}</span>
           </div>
-          <div class="trade-preview"><span class="trade-preview-line buy-preview"></span><span class="trade-preview-line sell-preview"></span></div>
-        </td>`;
+          <div class="market-product-price">
+            <span>현재 시세</span>
+            <strong>${money(info.price)}</strong>
+            <span class="${deviationClass}">도시 기준가 대비 ${pct(deviation)}</span>
+          </div>
+        </div>
+
+        <div class="market-product-metrics">
+          <div class="market-metric"><span>시장 재고</span><strong>${info.stock}개 · ${info.stockLabel}</strong><small>평시 ${info.targetStock}개 (${stockPct}%)</small></div>
+          <div class="market-metric"><span>수요</span><strong>${info.demandLabel}</strong><small>평시 대비 ${demandPct}%</small></div>
+          <div class="market-metric"><span>보유 수량</span><strong>${item.qty}개</strong></div>
+          <div class="market-metric"><span>평균 매입가</span><strong>${item.qty ? money(item.avgCost) : '—'}</strong></div>
+          <div class="market-metric"><span>보유 손익 (시세 기준)</span><strong class="${heldClass}">${heldProfitRate == null ? '—' : pct(heldProfitRate)}</strong></div>
+        </div>
+
+        <div class="market-product-trades">
+          <div class="market-trade-side">
+            <div class="trade-action-side">
+              <button class="buy-button" type="button">매입</button>
+              <button class="buy-max-button" type="button">최대 매입</button>
+            </div>
+            <div class="trade-preview">
+              <span class="trade-preview-line buy-preview"></span>
+              <span class="trade-preview-line buy-balance"></span>
+              <span class="trade-preview-line buy-travel"></span>
+              <span class="trade-preview-line max-preview"></span>
+            </div>
+          </div>
+          <div class="market-trade-side">
+            <div class="trade-action-side">
+              <button class="sell-button" type="button">판매</button>
+              <button class="sell-all-button" type="button">전량 판매</button>
+            </div>
+            <div class="trade-preview">
+              <span class="trade-preview-line sell-preview"></span>
+              <span class="trade-preview-line sell-balance"></span>
+              <span class="trade-preview-line sell-all-preview"></span>
+            </div>
+          </div>
+        </div>`;
 
       function executeTrade(side, qty, control) {
         if (!qty || qty < 1) return;
@@ -380,28 +504,32 @@
         recordAction({ type: side, productId: product.id, qty });
         if (side === 'buy') {
           showToast(product.name + ' ' + qty + '개 매입 ' + money(result.total) +
-            ' · 평균 ' + money(result.unitPrice) + '/개');
+            ' · 매입 후 현금 ' + money(game.cash));
           el('newsTitle').textContent = product.name + ' 매입 완료';
           el('newsText').textContent = '거래량이 시장 재고와 다음 체결가격에 반영되었습니다.';
         } else {
           showToast(product.name + ' ' + qty + '개 판매 ' + money(result.revenue) +
-            ' · 실현손익 ' + signedMoney(result.profit));
+            ' · 실현손익 ' + signedMoney(result.profit) + ' · 판매 후 현금 ' + money(game.cash));
           el('newsTitle').textContent = product.name + ' 판매 완료';
           el('newsText').textContent = '판매 물량이 현지 시장 재고에 반영되었습니다.';
         }
       }
 
-      tr.querySelector('.buy-button').addEventListener('click', () => executeTrade('buy', tradeQuantity(), selectedQuantityMode));
-      tr.querySelector('.sell-button').addEventListener('click', () => executeTrade('sell', tradeQuantity(), selectedQuantityMode));
-      tr.querySelector('.buy-max-button').addEventListener('click', () => {
-        const qty = TradeUX.quote(game, product.id, 1).buy.maxQuantity;
-        executeTrade('buy', qty, 'max_buy');
+      card.querySelector('.buy-button').addEventListener('click', () =>
+        executeTrade('buy', tradeQuantity(), selectedQuantityMode));
+      card.querySelector('.sell-button').addEventListener('click', () =>
+        executeTrade('sell', tradeQuantity(), selectedQuantityMode));
+      card.querySelector('.buy-max-button').addEventListener('click', () => {
+        const budget = TradeUX.tradeBudget(game, product.id, 1, plannedDestinationId);
+        const reserve = el('keepTravelCost').checked;
+        const qty = reserve ? budget.maxWithTransport : budget.maxWithoutTransport;
+        executeTrade('buy', qty, reserve ? 'reserve_max_buy' : 'max_buy');
       });
-      tr.querySelector('.sell-all-button').addEventListener('click', () => {
+      card.querySelector('.sell-all-button').addEventListener('click', () => {
         const qty = TradeUX.quote(game, product.id, 1).sell.maxQuantity;
         executeTrade('sell', qty, 'sell_all');
       });
-      body.appendChild(tr);
+      body.appendChild(card);
     });
     refreshTradeQuotes();
   }
@@ -770,6 +898,12 @@
     selectedQuantityMode = 'custom';
     refreshTradeQuotes();
   });
+  el('routeBudgetCity').addEventListener('change', (event) => {
+    plannedDestinationId = event.target.value;
+    renderRouteBudget();
+    refreshTradeQuotes();
+  });
+  el('keepTravelCost').addEventListener('change', refreshTradeQuotes);
   el('tradeQty').addEventListener('change', () => {
     tradeQuantity();
     refreshTradeQuotes();

@@ -174,4 +174,96 @@ test('거래 입력 기록의 중복·변조·잘못된 행동 위치는 집계�
   assert.throws(() => TradeUX.createControlEntry({ ...good, control: 'sell_all' }));
 });
 
+test('거래 계획은 실제 매입 후 현금과 현재 운송비 차감 잔액을 표시한다', () => {
+  const game = new Game({ seed: 'route-budget-parity' });
+  const plan = TradeUX.tradeBudget(game, 'rice', 5, 'busan');
+  const route = game.routeInfo('seoul', 'busan');
+  assert.equal(plan.route.cost, route.cost);
+  assert.equal(plan.route.days, route.days);
+  assert.equal(plan.cashBefore, game.cash);
+  assert.equal(plan.buy.allowed, true);
+  assert.equal(plan.buy.cashAfter, game.cash - plan.buy.total);
+  assert.equal(plan.buy.cashAfterTransport, game.cash - plan.buy.total - route.cost);
+
+  const actual = game.buy('rice', 5);
+  assert.equal(game.cash, plan.buy.cashAfter);
+  assert.equal(actual.total, plan.buy.total);
+
+  const selling = TradeUX.tradeBudget(game, 'rice', 5, 'busan');
+  assert.equal(selling.sell.cashAfter, game.cash + selling.sell.revenue);
+  assert.equal(selling.sell.cashAfterTransport, selling.sell.cashAfter - route.cost);
+  const sale = game.sell('rice', 5);
+  assert.equal(game.cash, selling.sell.cashAfter);
+  assert.equal(sale.revenue, selling.sell.revenue);
+});
+
+test('이동비 확보 최대 매입은 선택한 도시 운송비를 반드시 남긴다', () => {
+  const game = new Game({ seed: 'reserve-transport-budget' });
+  game.cash = 5400;
+  game.capacity = 100;
+  const destination = 'fukuoka';
+  const cost = game.routeInfo(game.cityId, destination).cost;
+  const estimate = TradeUX.tradeBudget(game, 'rice', 1, destination);
+  assert.ok(estimate.maxWithTransport > 0);
+  assert.ok(estimate.maxWithTransport <= estimate.maxWithoutTransport);
+  const max = TradeUX.quote(game, 'rice', estimate.maxWithTransport).buy;
+  assert.ok(game.cash - max.total >= cost);
+
+  // If additional units fit stock/cargo, the next one must exceed the reserved budget.
+  const next = estimate.maxWithTransport + 1;
+  if (next <= game.getMarketState(game.cityId, 'rice').stock && next <= game.capacity) {
+    const nextCost = game.executionPrice(game.cityId, 'rice', next, 'buy') * next;
+    assert.ok(game.cash - nextCost < cost);
+  }
+
+  const bought = game.buy('rice', estimate.maxWithTransport);
+  assert.equal(bought.total, max.total);
+  assert.ok(game.cash >= cost);
+  game.travel(destination);
+});
+
+test('이동비 확보는 현금이 운송비보다 적으면 매입을 막고 일반 최대와 구분한다', () => {
+  const game = new Game({ seed: 'reserve-unaffordable-route' });
+  game.cash = 1000;
+  const cost = game.routeInfo('seoul', 'shanghai').cost;
+  assert.ok(cost > 0);
+  game.cash = Math.max(0, cost - 10);
+  const plan = TradeUX.tradeBudget(game, 'rice', 1, 'shanghai');
+  assert.equal(plan.maxWithTransport, 0);
+  assert.ok(plan.maxWithoutTransport >= plan.maxWithTransport);
+  assert.equal(plan.buy.cashAfterTransport == null || plan.buy.cashAfterTransport < 0, true);
+});
+
+test('운송비 예상은 경로 이벤트 반영 가격으로 계산하고 게임 상태를 변경하지 않는다', () => {
+  const game = new Game({ seed: 'route-event-preview' });
+  const key = game.routeKey('seoul', 'busan');
+  game.routeEvents.push({
+    id: 'route-event-preview-id',
+    routeKey: key,
+    kind: 'congestion',
+    costMultiplier: 1.25,
+    daysDelta: 1,
+    expiresDay: game.day + 3
+  });
+  const state = game.snapshot();
+  const plan = TradeUX.tradeBudget(game, 'rice', 3, 'busan');
+  const route = game.routeInfo('seoul', 'busan');
+  assert.equal(plan.route.cost, route.cost);
+  assert.equal(plan.route.days, route.days);
+  assert.equal(plan.maxWithTransport, TradeUX.maxBuyWithinBudget(game, 'rice', game.cash - route.cost));
+  assert.deepEqual(game.snapshot(), state);
+});
+
+test('운송비 확보 최대 거래도 별도 입력 방식으로 집계한다', () => {
+  const actions = [{ type: 'buy', productId: 'rice', qty: 5 }];
+  const entry = TradeUX.createControlEntry({
+    actionIndex: 1, day: 1, cityId: 'seoul',
+    side: 'buy', productId: 'rice', quantity: 5, control: 'reserve_max_buy'
+  });
+  const summary = TradeUX.summarizeControls(actions, [entry]);
+  assert.equal(summary.trackedTrades, 1);
+  assert.equal(summary.counts.reserve_max_buy, 1);
+  assert.throws(() => TradeUX.createControlEntry({ ...entry, side: 'sell' }));
+});
+
 console.log('\nAll Merchant Globe trade UX tests passed.');
