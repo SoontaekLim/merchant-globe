@@ -47,13 +47,22 @@
               <h2><span id="marketCity">서울</span> 시장</h2>
               <p id="marketSummary" class="muted"></p>
             </div>
-            <label class="quantity-control">거래 수량
-              <input id="tradeQty" type="number" min="1" max="99" value="1" inputmode="numeric" />
-            </label>
+            <div class="quantity-toolbar" aria-label="거래 수량 설정">
+              <div class="quantity-shortcuts">
+                <label class="quantity-control" for="tradeQty">거래 수량
+                  <input id="tradeQty" type="number" min="1" max="9999" step="1" value="1" inputmode="numeric" />
+                </label>
+                <div class="quantity-presets" role="group" aria-label="수량 빠른 선택">
+                  <button id="qtyOneBtn" class="quantity-preset active" type="button" aria-pressed="true">1개</button>
+                  <button id="qtyFiveBtn" class="quantity-preset" type="button" aria-pressed="false">5개</button>
+                </div>
+              </div>
+              <small>설정 수량은 모든 상품에 공통 적용 · 상품별 최대 매입/전량 판매는 오른쪽 버튼</small>
+            </div>
           </div>
 
           <div class="table-wrap">
-            <table>
+            <table class="market-table">
               <thead>
                 <tr>
                   <th>상품</th>
@@ -186,6 +195,7 @@
   <script src="game-core.js"></script>
   <script src="save-system.js"></script>
   <script src="play-report.js"></script>
+  <script src="trade-ux.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
