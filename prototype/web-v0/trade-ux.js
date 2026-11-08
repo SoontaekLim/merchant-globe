@@ -69,7 +69,58 @@
     };
   }
 
-  const api = { MAX_INPUT_QUANTITY, normalizeQuantity, quote };
+  const CONTROL_MODES = Object.freeze([
+    'preset_1', 'preset_5', 'preset_10', 'custom', 'max_buy', 'sell_all'
+  ]);
+
+  function createControlEntry(options) {
+    const opts = options || {};
+    if (!CONTROL_MODES.includes(opts.control)) throw new Error('알 수 없는 거래 입력 방식입니다.');
+    if (!['buy', 'sell'].includes(opts.side)) throw new Error('알 수 없는 거래 유형입니다.');
+    if (!Number.isInteger(opts.actionIndex) || opts.actionIndex < 1) throw new Error('거래 행동 위치가 올바르지 않습니다.');
+    if (!Number.isInteger(opts.quantity) || opts.quantity < 1) throw new Error('거래 수량이 올바르지 않습니다.');
+    if (typeof opts.productId !== 'string' || !opts.productId) throw new Error('상품 ID가 올바르지 않습니다.');
+    if ((opts.control === 'max_buy' && opts.side !== 'buy') || (opts.control === 'sell_all' && opts.side !== 'sell')) {
+      throw new Error('거래 입력 방식과 거래 유형이 일치하지 않습니다.');
+    }
+
+    return {
+      type: 'trade_control',
+      actionIndex: opts.actionIndex,
+      day: opts.day,
+      cityId: opts.cityId,
+      side: opts.side,
+      productId: opts.productId,
+      quantity: opts.quantity,
+      control: opts.control
+    };
+  }
+
+  function summarizeControls(actions, entries) {
+    const counts = Object.fromEntries(CONTROL_MODES.map((mode) => [mode, 0]));
+    const validEntries = [];
+    const seen = new Set();
+    for (const entry of entries || []) {
+      if (!entry || !CONTROL_MODES.includes(entry.control) || !Number.isInteger(entry.actionIndex) || seen.has(entry.actionIndex)) continue;
+      const action = (actions || [])[entry.actionIndex - 1];
+      if (!action || !['buy', 'sell'].includes(action.type)) continue;
+      if (action.type !== entry.side || action.productId !== entry.productId || action.qty !== entry.quantity) continue;
+      if ((entry.control === 'max_buy' && entry.side !== 'buy') || (entry.control === 'sell_all' && entry.side !== 'sell')) continue;
+      counts[entry.control]++;
+      validEntries.push(entry);
+      seen.add(entry.actionIndex);
+    }
+    const totalTrades = (actions || []).filter((action) => action.type === 'buy' || action.type === 'sell').length;
+    return {
+      totalTrades,
+      trackedTrades: validEntries.length,
+      untrackedTrades: totalTrades - validEntries.length,
+      counts,
+      entries: validEntries
+    };
+  }
+
+  const api = { MAX_INPUT_QUANTITY, normalizeQuantity, quote, CONTROL_MODES, createControlEntry, summarizeControls };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   global.MerchantGlobeTradeUX = api;
 })(typeof window !== 'undefined' ? window : globalThis);
