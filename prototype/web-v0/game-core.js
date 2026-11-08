@@ -81,13 +81,22 @@
 
   function createRng(seed) {
     let state = hashSeed(seed) || 1;
-    return function rng() {
+    function rng() {
       state ^= state << 13;
       state ^= state >>> 17;
       state ^= state << 5;
       state >>>= 0;
       return state / 4294967296;
+    }
+    // Checkpoints capture the exact PRNG position, not just the initial seed.
+    rng.getState = () => state >>> 0;
+    rng.setState = (next) => {
+      if (!Number.isInteger(next) || next < 0 || next > 0xFFFFFFFF) {
+        throw new Error('체크포인트 난수 상태가 올바르지 않습니다.');
+      }
+      state = next >>> 0;
     };
+    return rng;
   }
 
   function round10(n) { return Math.max(10, Math.round(n / 10) * 10); }
@@ -185,6 +194,81 @@
         totalAssets: this.totalAssets(),
         cargoUsed: this.cargoUsed()
       };
+    }
+
+    exportCheckpoint() {
+      return deepClone({
+        format: 1,
+        rngState: this.rng.getState(),
+        day: this.day,
+        maxDay: this.maxDay,
+        cityId: this.cityId,
+        cash: this.cash,
+        capacity: this.capacity,
+        cargoUpgradeLevel: this.cargoUpgradeLevel,
+        intelLevel: this.intelLevel,
+        intelSnapshots: this.intelSnapshots,
+        inventory: this.inventory,
+        market: this.market,
+        marketDynamics: this.marketDynamics,
+        events: this.events,
+        routeEvents: this.routeEvents,
+        logs: this.logs,
+        gameOver: this.gameOver,
+        stats: this.stats
+      });
+    }
+
+    restoreCheckpoint(source) {
+      if (!source || source.format !== 1 || !CITIES[source.cityId] ||
+          !Number.isSafeInteger(source.day) || source.day < 1 ||
+          !Number.isSafeInteger(source.maxDay) || source.maxDay < source.day ||
+          !Number.isFinite(source.cash) || source.cash < 0 ||
+          !Number.isFinite(source.capacity) || source.capacity < 1 ||
+          !Number.isInteger(source.cargoUpgradeLevel) || source.cargoUpgradeLevel < 0 ||
+          !Number.isInteger(source.intelLevel) || source.intelLevel < 0 ||
+          source.intelLevel >= INTEL_LEVELS.length ||
+          !source.market || !source.marketDynamics || !source.inventory ||
+          !source.intelSnapshots || !Array.isArray(source.events) ||
+          !Array.isArray(source.routeEvents) || !Array.isArray(source.logs) ||
+          typeof source.gameOver !== 'boolean' || !source.stats) {
+        throw new Error('체크포인트 경제 상태가 올바르지 않습니다.');
+      }
+      const state = deepClone(source);
+      for (const cityId of Object.keys(CITIES)) {
+        if (!state.market[cityId] || !state.marketDynamics[cityId]) {
+          throw new Error('체크포인트 도시 상태가 누락되었습니다.');
+        }
+        for (const product of PRODUCTS) {
+          if (!Number.isFinite(state.market[cityId][product.id]) ||
+              !state.marketDynamics[cityId][product.id] ||
+              !Number.isFinite(state.marketDynamics[cityId][product.id].stock)) {
+            throw new Error('체크포인트 시장 상태가 누락되었습니다.');
+          }
+        }
+      }
+      for (const product of PRODUCTS) {
+        const item = state.inventory[product.id];
+        if (!item || !Number.isInteger(item.qty) || item.qty < 0 ||
+            !Number.isFinite(item.avgCost) || item.avgCost < 0 ||
+            !Number.isFinite(item.freshness)) {
+          throw new Error('체크포인트 화물 상태가 올바르지 않습니다.');
+        }
+      }
+      for (const field of ['buys', 'sells', 'trips', 'realizedProfit', 'transportCost', 'unitsBought', 'unitsSold']) {
+        if (!Number.isFinite(state.stats[field])) {
+          throw new Error('체크포인트 거래 통계가 올바르지 않습니다.');
+        }
+      }
+      // Validate the RNG position before mutating the current game.
+      this.rng.setState(state.rngState);
+      const fields = [
+        'day', 'maxDay', 'cityId', 'cash', 'capacity', 'cargoUpgradeLevel',
+        'intelLevel', 'intelSnapshots', 'inventory', 'market', 'marketDynamics',
+        'events', 'routeEvents', 'logs', 'gameOver', 'stats'
+      ];
+      fields.forEach((field) => { this[field] = state[field]; });
+      return this.snapshot();
     }
 
     getProduct(id) { return PRODUCTS.find((p) => p.id === id); }
