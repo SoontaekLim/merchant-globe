@@ -147,7 +147,8 @@
         tradeControlSummary: (() => {
           const summary = TradeUX.summarizeControls(actionHistory, tradeControls);
           return { totalTrades: summary.totalTrades, trackedTrades: summary.trackedTrades,
-            untrackedTrades: summary.untrackedTrades, counts: summary.counts };
+            untrackedTrades: summary.untrackedTrades, counts: summary.counts,
+            surfaceCounts: summary.surfaceCounts };
         })()
       };
       const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' });
