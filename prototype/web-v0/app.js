@@ -312,6 +312,7 @@
       const maxPreview = card.querySelector('.max-preview');
       const sellPreview = card.querySelector('.sell-preview');
       const sellBalance = card.querySelector('.sell-balance');
+      const sellAllPreview = card.querySelector('.sell-all-preview');
 
       buy.disabled = !plan.buy.allowed;
       sell.disabled = !plan.sell.allowed;
@@ -387,9 +388,16 @@
       if (plan.sell.maxQuantity > 0) {
         const allQuote = TradeUX.quote(game, productId, plan.sell.maxQuantity).sell;
         const after = game.cash + allQuote.revenue;
-        sellAll.title = '전량 판매 후 현금 ' + money(after) +
-          ' · 이동 후 ' + money(after - plan.route.cost);
+        const afterTravel = after - plan.route.cost;
+        sellAllPreview.textContent = '전량 ' + plan.sell.maxQuantity + '개 판매 ' +
+          money(allQuote.revenue) + ' → 현금 ' + money(after) +
+          (afterTravel >= 0 ? ' → 이동 후 ' + money(afterTravel)
+            : ' → 이동비 부족 ' + money(-afterTravel));
+        sellAllPreview.className = 'trade-preview-line sell-all-preview ' + (afterTravel >= 0 ? '' : 'negative');
+        sellAll.title = sellAllPreview.textContent;
       } else {
+        sellAllPreview.textContent = '전량 판매할 재고가 없습니다.';
+        sellAllPreview.className = 'trade-preview-line sell-all-preview unavailable';
         sellAll.title = '판매할 재고가 없습니다';
       }
     });
@@ -480,6 +488,7 @@
             <div class="trade-preview">
               <span class="trade-preview-line sell-preview"></span>
               <span class="trade-preview-line sell-balance"></span>
+              <span class="trade-preview-line sell-all-preview"></span>
             </div>
           </div>
         </div>`;
