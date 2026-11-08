@@ -77,6 +77,7 @@
   function renderClock() {
     if (!session) return;
     const game = session.game;
+    el('speedSelect').value = String(session.msPerDay);
     el('day').textContent = 'Day ' + game.day + ' · 무제한';
     el('nextTick').textContent = '다음 시장 갱신 ' + formatSeconds(session.nextTickAtMs() - session.nowMs);
     const place = CITIES[game.cityId];
@@ -459,6 +460,19 @@
     }
   }
 
+  el('speedSelect').addEventListener('change', () => {
+    const nextSpeed = Number(el('speedSelect').value);
+    try {
+      const result = session.perform('setSpeed', { msPerDay: nextSpeed }, Date.now());
+      store();
+      render();
+      notify('시간 속도가 ' + formatSeconds(result.msPerDay) +
+        '/일로 변경됐습니다. 현재 게임과 운송 진행을 유지합니다.');
+    } catch (error) {
+      el('speedSelect').value = String(session.msPerDay);
+      notify('시간 속도를 변경하지 못했습니다: ' + error.message, true);
+    }
+  });
   el('tradeQty').addEventListener('input', () => { quantityMode = 'custom'; renderMarket(); });
   document.querySelectorAll('.quantity-preset').forEach((button) => {
     button.addEventListener('click', () => {
