@@ -54,7 +54,7 @@ def main() -> None:
         health = json.loads(health_text)
         assert health["ok"] is True
         assert health["service"] == "merchant-globe-mvp"
-        assert health["version"] == "0.6.0"
+        assert health["version"] == "0.6.1"
 
         config = json.loads(read_url("/api/config"))
         assert config["mode"] == "realtime"

@@ -7,7 +7,7 @@
   const SAVE_KEY = 'merchant-globe.realtime.save.v1';
   const el = (id) => document.getElementById(id);
   const money = (value) => '₩' + Math.round(Number(value) || 0).toLocaleString('ko-KR');
-  const signed = (value) => (value >= 0 ? '+' : '-') + money(Math.abs(value));
+  const signed = (value) => (Math.round(value) >= 0 ? '+' : '-') + money(Math.abs(Math.round(value)));
   const pct = (value) => (value >= 0 ? '+' : '') + Number(value).toFixed(1) + '%';
   const formatSeconds = (ms) => {
     const seconds = Math.max(0, Math.ceil(ms / 1000));
@@ -21,23 +21,26 @@
   let plannedCityId = null;
   let quantityMode = 'preset_5';
   let saveEnabled = true;
-  let lastNotice = '';
+  let catchingUp = false;
+  const CATCH_UP_TICKS = 250;
   const cargoQty = Object.create(null);
 
   function notify(text, error = false) {
     const node = el('toast');
     node.textContent = text;
     node.className = 'toast show' + (error ? ' error' : '');
-    // Toast is replaced or cleared during the next timed update.
-    lastNotice = text;
   }
 
   function store(silent = true) {
     if (!saveEnabled || !session) return false;
+    if (session.pendingSave) {
+      el('saveStatus').textContent = '저장 행동 복구 중';
+      return false;
+    }
     try {
       localStorage.setItem(SAVE_KEY, JSON.stringify(session.toSave()));
       el('saveStatus').textContent = '자동저장됨';
-      if (!silent) notify('현재 실시간 진행 상태를 저장했습니다.');
+      if (!silent) notify(catchingUp ? '현재까지의 오프라인 복구 진행을 저장했습니다.' : '현재 실시간 진행 상태를 저장했습니다.');
       return true;
     } catch (error) {
       el('saveStatus').textContent = '저장 오류';
@@ -51,6 +54,7 @@
     session = new Realtime.RealtimeSession({
       GameClass: Game, seed: now, startedAtMs: now, msPerDay: speed
     });
+    catchingUp = false;
     selectedIntelCity = 'busan';
     plannedCityId = null;
     quantityMode = 'preset_5';
@@ -63,7 +67,9 @@
     try {
       const raw = localStorage.getItem(SAVE_KEY);
       if (!raw) return false;
-      session = Realtime.restoreSave(JSON.parse(raw), Game, Date.now());
+      const now = Date.now();
+      session = Realtime.restoreSave(JSON.parse(raw), Game, now, { catchUpTicks: CATCH_UP_TICKS });
+      catchingUp = session.recoveryTargetMs !== null;
       el('speedSelect').value = String(session.msPerDay);
       return true;
     } catch (error) {
@@ -78,6 +84,8 @@
     if (!session) return;
     const game = session.game;
     el('speedSelect').value = String(session.msPerDay);
+    el('speedSelect').disabled = catchingUp;
+    el('exportBtn').disabled = catchingUp;
     el('day').textContent = 'Day ' + game.day + ' · 무제한';
     el('nextTick').textContent = '다음 시장 갱신 ' + formatSeconds(session.nextTickAtMs() - session.nowMs);
     const place = CITIES[game.cityId];
@@ -86,9 +94,13 @@
     el('cityDetail').textContent = transit ? '운송 중 · 현지 거래 불가' : place.country;
     el('cash').textContent = money(game.cash);
     el('assets').textContent = money(game.totalAssets());
-    el('clockState').textContent = transit ? '운송 중 — 경제는 계속 진행됩니다' : '거래하지 않아도 경제는 흐릅니다';
-    el('clockDescription').textContent = '현재 속도: 현실 ' + formatSeconds(session.msPerDay) +
-      '마다 게임 1일 · 시장 가격·재고·이벤트 자동 변동';
+    el('clockState').textContent = catchingUp ? '오프라인 시장 복구 중'
+      : transit ? '운송 중 — 경제는 계속 진행됩니다' : '거래하지 않아도 경제는 흐릅니다';
+    el('clockDescription').textContent = catchingUp
+      ? '미반영 경제 시간 약 ' + Math.ceil(Math.max(0, session.recoveryTargetMs - session.nowMs) / session.msPerDay) +
+        '일 · 안전하게 나누어 정산 중입니다. 완료 후 거래할 수 있습니다.'
+      : '현재 속도: 현실 ' + formatSeconds(session.msPerDay) +
+        '마다 게임 1일 · 시장 가격·재고·이벤트 자동 변동';
     const panel = el('transitPanel');
     panel.hidden = !transit;
     if (transit) {
@@ -99,14 +111,21 @@
       const passed = session.nowMs - transit.departedAtMs;
       el('transitBar').style.width = Math.max(0, Math.min(100, passed / duration * 100)) + '%';
     }
-    el('liveNotice').textContent = transit
-      ? '운송 중에는 시장 거래·업그레이드가 잠깁니다. 귀환 전에도 시세는 변동합니다.'
-      : '경제 갱신은 매매나 도시 이동 없이 계속 진행됩니다. 재접속 시 오프라인 시간도 반영됩니다.';
+    el('liveNotice').textContent = catchingUp
+      ? '오프라인 경과를 분할 복원하고 있습니다. 현금·화물·시장 정보를 모두 복구한 뒤 거래가 열립니다.'
+      : transit
+        ? '운송 중에는 시장 거래·업그레이드가 잠깁니다. 귀환 전에도 시세는 변동합니다.'
+        : '경제 갱신은 매매나 도시 이동 없이 계속 진행됩니다. 재접속 시 오프라인 시간도 반영됩니다.';
   }
 
   function act(type, data) {
+    const now = Date.now();
+    if (!sync(now)) {
+      notify('오프라인 경제 정산이 끝난 뒤 거래할 수 있습니다.', true);
+      return null;
+    }
     try {
-      const result = session.perform(type, data, Date.now());
+      const result = session.perform(type, data, now);
       store();
       render();
       if (type === 'buy') notify(PRODUCTS.find((p) => p.id === data.productId).name +
@@ -117,6 +136,8 @@
       if (type === 'startTravel') notify(CITIES[result.to].name + ' 출발 · 도착까지 ' + formatSeconds(session.remainingMs()));
       if (type === 'upgradeCargo') notify('화물칸 ' + result.capacity + '칸으로 확장했습니다.');
       if (type === 'upgradeIntel') notify('정보망 Lv.' + result.level + '로 확장했습니다.');
+      if (type === 'setSpeed') notify('시간 속도가 ' + formatSeconds(result.msPerDay) +
+        '/일로 변경됐습니다. 현재 게임과 운송 진행을 유지합니다.');
       return result;
     } catch (error) {
       notify(error.message || '거래할 수 없습니다.', true);
@@ -151,7 +172,7 @@
       select.appendChild(option);
     }
     if (plannedCityId) select.value = plannedCityId;
-    select.disabled = Boolean(session.transit);
+    select.disabled = Boolean(session.transit) || catchingUp;
     const active = routes.find((item) => item.id === plannedCityId);
     if (!active) return;
     const budget = game.cash - active.route.cost;
@@ -169,8 +190,11 @@
     const body = el('marketList');
     body.replaceChildren();
     const requested = drawQtyPresets();
-    if (session.transit) {
-      body.innerHTML = '<p class="rt-disabled-note">운송 중에는 현재 도시 시장을 이용할 수 없습니다. 도착 후 새로운 시세로 거래하세요.</p>';
+    if (session.transit || catchingUp) {
+      body.innerHTML = '<p class="rt-disabled-note">' +
+        (catchingUp ? '오프라인 경과를 복구하고 있습니다. 완료 후 현재 시세로 거래할 수 있습니다.'
+          : '운송 중에는 현재 도시 시장을 이용할 수 없습니다. 도착 후 새로운 시세로 거래하세요.') +
+        '</p>';
       return;
     }
     const keepCost = el('keepTravelCost').checked;
@@ -248,7 +272,7 @@
     el('cargoCount').textContent = used + ' / ' + game.capacity;
     el('cargoBar').style.width = Math.min(100, used * 100 / game.capacity) + '%';
     el('upgradeCost').textContent = money(game.cargoUpgradeCost());
-    el('upgradeCargoBtn').disabled = Boolean(session.transit);
+    el('upgradeCargoBtn').disabled = Boolean(session.transit) || catchingUp;
     const body = el('inventoryList');
     body.replaceChildren();
     const owned = PRODUCTS.filter((product) => game.inventory[product.id].qty > 0);
@@ -281,8 +305,8 @@
         cargoQty[product.id] = qty;
         const selectedQuote = TradeUX.quote(game, product.id, qty).sell;
         const allQuote = TradeUX.quote(game, product.id, item.qty).sell;
-        selected.disabled = Boolean(session.transit) || !selectedQuote.allowed;
-        all.disabled = Boolean(session.transit);
+        selected.disabled = Boolean(session.transit) || catchingUp || !selectedQuote.allowed;
+        all.disabled = Boolean(session.transit) || catchingUp;
         selected.textContent = '선택 ' + qty + '개';
         all.textContent = '전량 ' + item.qty + '개';
         preview.textContent = selectedQuote.allowed
@@ -290,7 +314,8 @@
             ' · 판매 후 ' + money(game.cash + selectedQuote.revenue) +
             ' / 전량 판매 후 ' + money(game.cash + allQuote.revenue)
           : '선택 수량 초과 · 전량 판매 후 ' + money(game.cash + allQuote.revenue);
-        if (session.transit) preview.textContent = '운송 중 판매 불가 · 도착 후 시세로 계산합니다.';
+        if (catchingUp) preview.textContent = '오프라인 정산 중 판매 불가 · 복구 후 시세로 계산합니다.';
+        else if (session.transit) preview.textContent = '운송 중 판매 불가 · 도착 후 시세로 계산합니다.';
       }
       input.addEventListener('input', renderPreview);
       input.addEventListener('change', () => {
@@ -319,7 +344,7 @@
       const button = document.createElement('button');
       button.className = 'route-button';
       button.type = 'button';
-      button.disabled = Boolean(session.transit) || game.cash < route.cost;
+      button.disabled = Boolean(session.transit) || catchingUp || game.cash < route.cost;
       button.innerHTML = '<strong>' + CITIES[cityId].name + '</strong>' +
         '<span class="route-cost">' + money(route.cost) + '</span>' +
         '<span>' + route.days + '일 · 도착까지 ' + formatSeconds(route.days * session.msPerDay) + '</span>';
@@ -334,7 +359,7 @@
     el('intelLevelText').textContent = level.name + ' Lv.' + game.intelLevel;
     const next = INTEL_LEVELS[game.intelLevel + 1];
     const button = el('upgradeIntelBtn');
-    button.disabled = Boolean(session.transit) || !next || game.cash < game.intelUpgradeCost();
+    button.disabled = Boolean(session.transit) || catchingUp || !next || game.cash < game.intelUpgradeCost();
     button.textContent = next ? '확장 ' + money(game.intelUpgradeCost()) : '최고 단계';
     const dropdown = el('intelCity');
     dropdown.replaceChildren();
@@ -372,6 +397,33 @@
     });
   }
 
+  function renderPerformanceHistory() {
+    const period = el('performancePeriod').value === 'week' ? 'week' : 'day';
+    const rows = session.recentPerformance(period, period === 'day' ? 14 : 8);
+    const container = el('performanceHistory');
+    container.replaceChildren();
+    rows.slice().reverse().forEach((item) => {
+      const line = document.createElement('div');
+      line.className = 'rt-history-row';
+      const label = document.createElement('strong');
+      label.className = 'rt-history-period';
+      label.textContent = period === 'day'
+        ? 'Day ' + item.index
+        : item.index + '주차 · Day ' + item.startDay + '–' + item.endDay;
+      const details = document.createElement('span');
+      details.className = 'rt-history-detail';
+      details.textContent = '판매손익 ' + signed(item.realizedProfit) +
+        ' · 운송 ' + money(item.transportCost) +
+        ' · 투자 ' + money(item.investmentCost) +
+        ' · 매입/판매 ' + item.buys + '/' + item.sells + '회';
+      const net = document.createElement('strong');
+      net.className = 'rt-history-net ' + (item.netProfit >= 0 ? 'positive' : 'negative');
+      net.textContent = signed(item.netProfit);
+      line.append(label, details, net);
+      container.appendChild(line);
+    });
+  }
+
   function renderEventsAndLog() {
     const game = session.game;
     const events = game.marketRumors();
@@ -392,9 +444,14 @@
     });
 
     const stats = game.stats;
+    const totals = session.performanceTotals();
     el('performance').textContent = '매입 ' + stats.buys + '회 · 판매 ' + stats.sells +
-      '회 · 이동 ' + stats.trips + '회 · 실현손익 ' + signed(stats.realizedProfit) +
-      ' · 운송비 ' + money(stats.transportCost);
+      '회 · 이동 ' + stats.trips + '회 · 판매 실현손익 ' + signed(totals.realizedProfit) +
+      ' · 운송비 ' + money(totals.transportCost) +
+      ' · 성장 투자비 ' + money(totals.investmentCost) +
+      ' · 비용 차감 후 실현손익 ' + signed(totals.netProfit) +
+      ' · 압축된 옛 행동 ' + session.archivedActions + '건';
+    renderPerformanceHistory();
     const log = el('tradeLog');
     log.replaceChildren();
     game.logs.slice(0, 10).forEach((entry) => {
@@ -414,36 +471,60 @@
     renderEventsAndLog();
   }
 
-  function sync() {
-    if (!session) return;
+  function sync(now = Date.now(), manualSave = false) {
     try {
-      const progress = session.advanceTo(Date.now());
-      if (progress.ticks || progress.arrived) {
-        store();
+      const wasCatchingUp = catchingUp;
+      const progress = session.advanceTowards(now, CATCH_UP_TICKS);
+      catchingUp = !progress.complete;
+      if (progress.ticks || progress.arrived || catchingUp || wasCatchingUp || manualSave) {
+        store(!manualSave);
         render();
-        if (progress.arrived) notify(CITIES[session.game.cityId].name + ' 도착! 이제 거래할 수 있습니다.');
+        if (!manualSave && wasCatchingUp && !catchingUp) {
+          notify('오프라인 경제 복원이 완료됐습니다. 거래를 재개할 수 있습니다.');
+        } else if (progress.arrived && !catchingUp) {
+          notify(CITIES[session.game.cityId].name + ' 도착! 이제 거래할 수 있습니다.');
+        }
       } else {
         renderClock();
       }
+      return !catchingUp;
     } catch (error) {
+      catchingUp = true;
+      render();
       el('liveNotice').textContent = '오프라인 복구 오류: ' + error.message;
       el('saveStatus').textContent = '진행 일시 중단';
+      return false;
     }
   }
 
   function exportLog() {
+    if (!sync()) {
+      notify('오프라인 경제 복원이 끝난 뒤 플레이 기록을 내보낼 수 있습니다.', true);
+      return;
+    }
     try {
-      session.advanceTo(Date.now());
       const game = session.game;
+      // Telemetry export is intentionally not a restorable checkpoint:
+      // copying the full state would leak private remote market prices.
       const payload = {
-        exportVersion: 1, exportedAt: new Date().toISOString(),
-        save: session.toSave(),
+        exportVersion: 2, exportedAt: new Date().toISOString(),
+        session: {
+          seed: session.seed, startedAtMs: session.startedAtMs,
+          observedAtMs: session.nowMs,
+          msPerDay: session.initialMsPerDay, activeMsPerDay: session.msPerDay,
+          archivedActionCount: session.archivedActions,
+          lastCheckpointDay: session.checkpoint?.economy.day ?? null,
+          recentActions: session.actions
+        },
         summary: {
           economicDay: game.day, cityId: game.cityId,
           transit: session.transit, cash: game.cash,
           totalAssets: game.totalAssets(), cargoUsed: game.cargoUsed(),
-          inventory: game.inventory, stats: game.stats
-        }
+          inventory: game.inventory, stats: game.stats,
+          performance: session.performanceTotals()
+        },
+        recentDailyPerformance: session.recentPerformance('day', 14),
+        recentWeeklyPerformance: session.recentPerformance('week', 8)
       };
       const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' });
       const url = URL.createObjectURL(blob);
@@ -460,18 +541,10 @@
     }
   }
 
+  el('performancePeriod').addEventListener('change', renderPerformanceHistory);
   el('speedSelect').addEventListener('change', () => {
     const nextSpeed = Number(el('speedSelect').value);
-    try {
-      const result = session.perform('setSpeed', { msPerDay: nextSpeed }, Date.now());
-      store();
-      render();
-      notify('시간 속도가 ' + formatSeconds(result.msPerDay) +
-        '/일로 변경됐습니다. 현재 게임과 운송 진행을 유지합니다.');
-    } catch (error) {
-      el('speedSelect').value = String(session.msPerDay);
-      notify('시간 속도를 변경하지 못했습니다: ' + error.message, true);
-    }
+    act('setSpeed', { msPerDay: nextSpeed });
   });
   el('tradeQty').addEventListener('input', () => { quantityMode = 'custom'; renderMarket(); });
   document.querySelectorAll('.quantity-preset').forEach((button) => {
@@ -492,10 +565,10 @@
   });
   el('upgradeCargoBtn').addEventListener('click', () => act('upgradeCargo', {}));
   el('upgradeIntelBtn').addEventListener('click', () => act('upgradeIntel', {}));
-  el('saveBtn').addEventListener('click', () => { session.advanceTo(Date.now()); store(false); render(); });
+  el('saveBtn').addEventListener('click', () => sync(Date.now(), true));
   el('exportBtn').addEventListener('click', exportLog);
   el('newGameBtn').addEventListener('click', () => {
-    if (session && session.actions.length &&
+    if ((!saveEnabled || catchingUp || session.game.day > 1 || session.actions.length || session.archivedActions) &&
         !window.confirm('현재 실시간 게임 저장을 새 게임으로 덮어쓸까요?')) return;
     saveEnabled = true;
     buildNewSession(Number(el('speedSelect').value));

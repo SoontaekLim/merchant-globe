@@ -136,6 +136,19 @@
         <p class="section-label">TRADE JOURNAL</p>
         <h2>최근 행동 · 누적 성과</h2>
         <div id="performance" class="rt-performance"></div>
+        <section class="rt-history-section" aria-label="일간 및 주간 거래 손익">
+          <div class="rt-history-heading">
+            <h3>기간별 거래 손익</h3>
+            <label for="performancePeriod">집계
+              <select id="performancePeriod">
+                <option value="day">최근 14일</option>
+                <option value="week">최근 8주</option>
+              </select>
+            </label>
+          </div>
+          <p class="rt-history-help">판매 실현손익 − 운송비 − 성장 투자비 · 미판매 화물 평가손익 제외</p>
+          <div id="performanceHistory" class="rt-performance-history"></div>
+        </section>
         <div id="tradeLog" class="trade-log"></div>
       </section>
     </div>
