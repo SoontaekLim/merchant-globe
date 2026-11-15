@@ -394,7 +394,7 @@ test('손상된 체크포인트는 잘못된 시장이나 행동을 덮어쓰지
   const save = s.toSave();
   const badMarket = JSON.parse(JSON.stringify(save));
   delete badMarket.checkpoint.economy.market.seoul;
-  assert.throws(() => RT.restoreSave(badMarket, Game, s.nowMs), /시장 상태|도시 상태/);
+  assert.throws(() => RT.restoreSave(badMarket, Game, s.nowMs), /시장 상태|도시 상태|현지 시장 관측 도시/);
   const missingCheckpoint = JSON.parse(JSON.stringify(save));
   missingCheckpoint.checkpoint = null;
   missingCheckpoint.archivedActionCount = 1;
