@@ -54,7 +54,7 @@ def main() -> None:
         health = json.loads(health_text)
         assert health["ok"] is True
         assert health["service"] == "merchant-globe-mvp"
-        assert health["version"] == "0.7.0"
+        assert health["version"] == "0.7.1"
 
         config = json.loads(read_url("/api/config"))
         assert config["mode"] == "realtime"
@@ -65,6 +65,7 @@ def main() -> None:
         assert "Merchant Globe" in index
         assert "realtime-core.js" in index
         assert "realtime-app.js" in index
+        assert "market-decision.js" in index
         assert "classic.html" in index
 
         classic = read_url("/classic.html")
@@ -73,6 +74,7 @@ def main() -> None:
 
         assert "RealtimeSession" in read_url("/realtime-core.js")
         assert "renderMarket" in read_url("/realtime-app.js")
+        assert "sortRows" in read_url("/market-decision.js")
         assert "rt-clock-panel" in read_url("/realtime.css")
 
         print("Smoke test passed.")
