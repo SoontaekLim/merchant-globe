@@ -2,7 +2,7 @@
 
 const assert = require('node:assert/strict');
 const Decision = require('../market-decision.js');
-const { Game } = require('../game-core.js');
+const { Game, PRODUCTS } = require('../game-core.js');
 const Realtime = require('../realtime-core.js');
 
 function test(name, fn) {
@@ -89,7 +89,7 @@ test('실제 게임의 관측 결과를 정렬해도 시장 가격·난수 상�
   session.advanceTo(104000);
   const gameBefore = session.game.exportCheckpoint();
   const saveBefore = session.toSave();
-  const rows = Game.PRODUCTS.map((product) => ({
+  const rows = PRODUCTS.map((product) => ({
     product, trend: session.localMarketTrend(product.id)
   }));
   for (const mode of Decision.MODES) {
