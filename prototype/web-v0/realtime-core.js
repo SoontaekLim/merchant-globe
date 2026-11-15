@@ -11,6 +11,7 @@
   const CHECKPOINT_DAY_INTERVAL = 28;
   const DAILY_HISTORY_LIMIT = 180;
   const WEEKLY_HISTORY_LIMIT = 52;
+  const LOCAL_MARKET_DIARY_LIMIT = 8;
   const UNLIMITED_DAY = Number.MAX_SAFE_INTEGER;
   const TYPES = Object.freeze(['buy', 'sell', 'upgradeCargo', 'upgradeIntel', 'startTravel', 'setSpeed']);
   const COUNTS_AND_COSTS = ['buys', 'sells', 'trips', 'unitsBought', 'unitsSold', 'transportCost', 'investmentCost'];
@@ -90,10 +91,58 @@
       this.checkpoint = null;
       this.dailyHistory = [];
       this.weeklyHistory = [];
+      this.localMarketDiary = {};
       this.investmentTotal = 0;
       this.recoveryTargetMs = null;
       this.pendingSave = null;
       this.replayIndex = 0;
+      this.observeLocalMarket();
+    }
+
+    observeLocalMarket() {
+      if (this.transit) return;
+      const cityId = this.game.cityId;
+      const day = this.game.day;
+      const prices = {};
+      for (const productId of Object.keys(this.game.inventory)) {
+        prices[productId] = this.game.marketInfo(cityId, productId).price;
+      }
+      const rows = this.localMarketDiary[cityId] || (this.localMarketDiary[cityId] = []);
+      const observation = { day, prices };
+      if (rows.length && rows[rows.length - 1].day === day) rows[rows.length - 1] = observation;
+      else {
+        rows.push(observation);
+        if (rows.length > LOCAL_MARKET_DIARY_LIMIT) rows.shift();
+      }
+    }
+
+    advanceObservedEconomy(days) {
+      for (let i = 0; i < days; i++) {
+        this.game.advanceEconomy(1);
+        this.observeLocalMarket();
+      }
+    }
+
+    localMarketTrend(productId) {
+      if (!this.game.getProduct(productId)) throw new Error('존재하지 않는 상품입니다.');
+      // Only the current, accessible local market. Remote prices remain gated
+      // by the existing intel system, even if a city was visited previously.
+      if (this.transit) return null;
+      const today = this.game.day;
+      const rows = (this.localMarketDiary[this.game.cityId] || [])
+        .filter((row) => row.day >= today - 6 && row.day <= today);
+      const currentPrice = this.game.marketInfo(this.game.cityId, productId).price;
+      const yesterday = rows.find((row) => row.day === today - 1);
+      const values = rows.map((row) => row.prices[productId]);
+      return {
+        day: today,
+        observedDays: rows.length,
+        currentPrice,
+        previousDayPrice: yesterday ? yesterday.prices[productId] : null,
+        previousDayPercent: yesterday ? (currentPrice / yesterday.prices[productId] - 1) * 100 : null,
+        minPrice: values.length ? Math.min(...values) : currentPrice,
+        maxPrice: values.length ? Math.max(...values) : currentPrice
+      };
     }
 
     nextTickAtMs() {
@@ -135,12 +184,13 @@
         this.game.addLog(trip.toName + ' 도착 · ' + trip.days + '일 운송 완료');
         this.transit = null;
         this.transitRoundingMs = 0;
+        this.observeLocalMarket();
         arrived = true;
       }
 
       const afterArrival = Math.max(0, totalTick - (this.game.day - this.clockEpochDay));
       if (afterArrival) {
-        this.game.advanceEconomy(afterArrival);
+        this.advanceObservedEconomy(afterArrival);
         ticks += afterArrival;
       }
       this.nowMs = targetMs;
@@ -306,6 +356,7 @@
         economy: this.game.exportCheckpoint(),
         dailyHistory: clone(this.dailyHistory),
         weeklyHistory: clone(this.weeklyHistory),
+        localMarketDiary: clone(this.localMarketDiary),
         investmentTotal: this.investmentTotal
       };
       this.archivedActions = archivedActions;
@@ -383,6 +434,7 @@
 
       this.actions.push(action);
       this.recordPerformance(type, result);
+      if (type === 'buy' || type === 'sell') this.observeLocalMarket();
       return result;
     }
 
@@ -456,6 +508,31 @@
       }
       validateHistory(cp.dailyHistory, 'day', DAILY_HISTORY_LIMIT, cp.economy.day);
       validateHistory(cp.weeklyHistory, 'week', WEEKLY_HISTORY_LIMIT, Math.ceil(cp.economy.day / 7));
+      if (cp.localMarketDiary != null) {
+        const diary = cp.localMarketDiary;
+        if (!diary || typeof diary !== 'object' || Array.isArray(diary) ||
+            Object.keys(diary).length > Object.keys(cp.economy.market).length) {
+          throw new Error('현지 시장 관측 기록이 올바르지 않습니다.');
+        }
+        for (const [cityId, rows] of Object.entries(diary)) {
+          if (!Object.hasOwn(cp.economy.market, cityId) ||
+              !Array.isArray(rows) || rows.length > LOCAL_MARKET_DIARY_LIMIT) {
+            throw new Error('현지 시장 관측 도시가 올바르지 않습니다.');
+          }
+          let lastDay = 0;
+          const ids = Object.keys(cp.economy.inventory);
+          for (const row of rows) {
+            if (!row || !Number.isSafeInteger(row.day) ||
+                row.day <= lastDay || row.day > cp.economy.day ||
+                !row.prices || typeof row.prices !== 'object' || Array.isArray(row.prices) ||
+                Object.keys(row.prices).length !== ids.length ||
+                ids.some((id) => !Number.isFinite(row.prices[id]) || row.prices[id] <= 0)) {
+              throw new Error('현지 시장 관측 시세가 올바르지 않습니다.');
+            }
+            lastDay = row.day;
+          }
+        }
+      }
       integer(cp.investmentTotal, '체크포인트 성장 투자비', 0);
     } else if (payload.archivedActionCount) {
       throw new Error('압축된 행동의 체크포인트가 없습니다.');
@@ -513,6 +590,9 @@
       session.transit = cp.transit ? clone(cp.transit) : null;
       session.dailyHistory = clone(cp.dailyHistory);
       session.weeklyHistory = clone(cp.weeklyHistory);
+      // Legacy 0.6.1 checkpoints did not contain observation history.
+      session.localMarketDiary = cp.localMarketDiary ? clone(cp.localMarketDiary) : {};
+      session.observeLocalMarket();
       session.investmentTotal = cp.investmentTotal;
       session.archivedActions = cp.archivedActions;
       session.checkpoint = clone(cp);
@@ -531,6 +611,7 @@
 
   const api = { RealtimeSession, DEFAULT_MS_PER_DAY, SAVE_SCHEMA_VERSION,
     CHECKPOINT_ACTION_INTERVAL, CHECKPOINT_DAY_INTERVAL, DAILY_HISTORY_LIMIT, WEEKLY_HISTORY_LIMIT,
+    LOCAL_MARKET_DIARY_LIMIT,
     validateSave, restoreSave };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   global.MerchantGlobeRealtime = api;
