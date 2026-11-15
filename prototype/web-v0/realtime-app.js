@@ -203,6 +203,14 @@
       const item = game.inventory[product.id];
       const baseline = product.basePrice * CITIES[game.cityId].modifiers[product.id];
       const deviation = 100 * (info.price / baseline - 1);
+      const trend = session.localMarketTrend(product.id);
+      const trendChange = trend ? trend.previousDayPercent : null;
+      const trendLabel = trendChange == null
+        ? '전일 현지 관측 없음 · 시세 변화 기록 수집 중'
+        : '전일 관측 대비 ' + pct(trendChange) +
+          ' · 최근 7게임일 관측 ' + trend.observedDays + '일 범위 ' +
+          money(trend.minPrice) + '–' + money(trend.maxPrice);
+      const trendClass = trendChange == null ? '' : trendChange > 0 ? 'positive' : trendChange < 0 ? 'negative' : '';
       const rate = item.qty ? 100 * (info.price * game.freshnessMultiplier(product.id) / item.avgCost - 1) : null;
       const quote = TradeUX.quote(game, product.id, requested);
       const plan = TradeUX.tradeBudget(game, product.id, requested, plannedCityId);
@@ -228,6 +236,8 @@
         '<span>평균 매입 <strong>' + (item.qty ? money(item.avgCost) : '—') + '</strong></span>' +
         '<span>보유 손익 <strong class="' + (rate == null ? '' : rate >= 0 ? 'positive' : 'negative') +
         '">' + (rate == null ? '—' : pct(rate)) + '</strong></span></div>' +
+        '<div class="rt-local-trend ' + trendClass + '" aria-label="최근 현지 시세 관측">' +
+        '<span>현지 기록</span> ' + escapeText(trendLabel) + '</div>' +
         '<div class="rt-pair"><button class="rt-buy buy-button" type="button">매입 ' + requested + '개</button>' +
         '<button class="rt-max secondary-button" type="button">' +
         (keepCost ? '이동비 확보 ' : '최대 ') + max + '개</button></div>' +
