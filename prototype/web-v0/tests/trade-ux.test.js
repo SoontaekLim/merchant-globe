@@ -266,4 +266,84 @@ test('운송비 확보 최대 거래도 별도 입력 방식으로 집계한다'
   assert.throws(() => TradeUX.createControlEntry({ ...entry, side: 'sell' }));
 });
 
+test('화물칸에서 선택 수량 및 전량 판매 시 미리보기와 실제 수익이 일치한다', () => {
+  const game = new Game({ seed: 'cargo-panel-sale-flow' });
+  const actions = [{ type: 'buy', productId: 'rice', qty: 5 }];
+  game.buy('rice', 5);
+
+  const partial = TradeUX.tradeBudget(game, 'rice', 2, 'busan').sell;
+  assert.equal(partial.allowed, true);
+  assert.equal(partial.maxQuantity, 5);
+  const cashBefore = game.cash;
+  const sold = game.sell('rice', 2);
+  actions.push({ type: 'sell', productId: 'rice', qty: 2 });
+  assert.equal(sold.revenue, partial.revenue);
+  assert.equal(sold.profit, partial.profit);
+  assert.equal(game.cash, partial.cashAfter);
+  assert.equal(game.cash, cashBefore + sold.revenue);
+  assert.equal(game.inventory.rice.qty, 3);
+
+  const remaining = TradeUX.tradeBudget(game, 'rice', 3, 'busan').sell;
+  const all = game.sell('rice', 3);
+  actions.push({ type: 'sell', productId: 'rice', qty: 3 });
+  assert.equal(all.revenue, remaining.revenue);
+  assert.equal(all.profit, remaining.profit);
+  assert.equal(game.cash, remaining.cashAfter);
+  assert.equal(game.inventory.rice.qty, 0);
+
+  const payload = SaveSystem.createSavePayload({
+    seed: 'cargo-panel-sale-flow', maxDay: 30, actions
+  });
+  const restored = SaveSystem.restoreGame(payload, Game);
+  assert.deepEqual(restored.game.snapshot(), game.snapshot());
+});
+
+test('화물칸 판매 사용 로그는 시장 판매와 구분하고 기존 로그도 복원한다', () => {
+  const actions = [
+    { type: 'buy', productId: 'rice', qty: 5 },
+    { type: 'sell', productId: 'rice', qty: 2 },
+    { type: 'sell', productId: 'rice', qty: 3 }
+  ];
+  const entries = [
+    TradeUX.createControlEntry({ actionIndex: 1, day: 1, cityId: 'seoul',
+      side: 'buy', productId: 'rice', quantity: 5, control: 'preset_5' }),
+    TradeUX.createControlEntry({ actionIndex: 2, day: 1, cityId: 'seoul',
+      side: 'sell', productId: 'rice', quantity: 2, control: 'custom', surface: 'cargo' }),
+    TradeUX.createControlEntry({ actionIndex: 3, day: 1, cityId: 'seoul',
+      side: 'sell', productId: 'rice', quantity: 3, control: 'sell_all', surface: 'cargo' })
+  ];
+  const summary = TradeUX.summarizeControls(actions, entries);
+  assert.equal(summary.trackedTrades, 3);
+  assert.deepEqual(summary.surfaceCounts, { market: 1, cargo: 2 });
+  assert.equal(summary.counts.custom, 1);
+  assert.equal(summary.counts.sell_all, 1);
+  assert.equal(entries[0].surface, 'market');
+  assert.throws(() => TradeUX.createControlEntry({ ...entries[1], surface: 'unknown' }));
+  assert.equal(TradeUX.summarizeControls(actions, [
+    { ...entries[1], surface: 'unknown' }
+  ]).trackedTrades, 0);
+
+  const oldLog = { ...entries[0] };
+  delete oldLog.surface;
+  assert.deepEqual(
+    TradeUX.summarizeControls(actions, [oldLog]).surfaceCounts,
+    { market: 1, cargo: 0 }
+  );
+});
+
+test('화물칸 판매는 보유 수량을 넘길 수 없고 종료 후에는 판매할 수 없다', () => {
+  const game = new Game({ seed: 'cargo-panel-sell-limits' });
+  game.buy('rice', 3);
+  assert.equal(TradeUX.quote(game, 'rice', 4).sell.allowed, false);
+  assert.equal(TradeUX.quote(game, 'rice', 3).sell.allowed, true);
+  assert.throws(() => game.sell('rice', 4), /보유 수량/);
+
+  const over = new Game({ seed: 'cargo-panel-game-over', maxDay: 2 });
+  over.buy('rice', 1);
+  over.travel('busan');
+  assert.equal(over.gameOver, true);
+  assert.equal(TradeUX.quote(over, 'rice', 1).sell.allowed, false);
+  assert.throws(() => over.sell('rice', 1), /종료/);
+});
+
 console.log('\nAll Merchant Globe trade UX tests passed.');

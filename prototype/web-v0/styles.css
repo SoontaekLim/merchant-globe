@@ -319,3 +319,43 @@ tr:last-child td { border-bottom: 0; }
   .route-budget-destination, .route-budget-destination select { width: 100%; }
   .route-budget-summary { flex-basis: 100%; }
 }
+
+/* v0.5.4: sell directly from cargo, with per-product quantities and post-sale cash */
+.cargo-sell-help { margin: 0 0 10px; color: var(--muted); font-size: .73rem; line-height: 1.45; }
+.cargo-item {
+  min-width: 0; display: grid; gap: 10px; padding: 12px;
+  border-radius: 12px; border: 1px solid rgba(34,53,82,.72);
+  background: rgba(7,17,31,.55);
+}
+.cargo-item-heading { min-width: 0; display: flex; justify-content: space-between; }
+.cargo-item-heading strong { font-size: .87rem; }
+.cargo-item-heading small { display: block; margin-top: 2px; color: var(--muted); font-size: .71rem; }
+.cargo-sale-form { display: grid; gap: 8px; }
+.cargo-qty-label {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 8px; color: var(--muted); font-size: .75rem;
+}
+.cargo-sale-qty {
+  width: 90px; max-width: 100%; min-height: 37px;
+  border: 1px solid var(--border); border-radius: 9px;
+  background: #091524; color: var(--text); padding: 6px 10px;
+  text-align: right;
+}
+.cargo-sale-buttons { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 7px; }
+.cargo-sale-buttons button {
+  min-width: 0; width: 100%; min-height: 40px;
+  padding: 6px 8px; font-size: .72rem; font-weight: 750;
+  line-height: 1.3; white-space: normal; overflow-wrap: anywhere;
+}
+.cargo-sale-quotes { display: grid; gap: 7px; min-width: 0; }
+.cargo-sale-selected-quote, .cargo-sale-all-quote {
+  display: block; padding: 7px 9px; border-radius: 8px;
+  background: rgba(21,38,58,.56); color: #c0d8eb;
+  font-size: .7rem; line-height: 1.55; overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+}
+.cargo-sale-all-quote { border-left: 2px solid var(--accent-2); }
+.cargo-sale-selected-quote.unavailable { color: var(--muted); }
+.cargo-sale-qty:focus-visible, .cargo-sale-buttons button:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 2px;
+}
