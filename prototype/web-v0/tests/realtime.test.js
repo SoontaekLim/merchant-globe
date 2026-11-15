@@ -460,4 +460,184 @@ test('분할 오프라인 복원과 일괄 복원은 운송 도착 및 이후 �
   assert.deepEqual(bounded.transit, direct.transit);
 });
 
+test('밀리초 경계에서 속도를 반복 전환해도 갱신과 도착이 밀리지 않는다', () => {
+  const s = create('speed-round-trip', 60000);
+  s.perform('buy', { productId: 'fish', qty: 2 }, s.nowMs);
+  const trip = s.perform('startTravel', { destinationId: 'busan' }, s.nowMs);
+  s.perform('setSpeed', { msPerDay: 10000 }, 100001);
+  assert.equal(s.nextTickAtMs(), 110001);
+  s.checkpointNow();
+  const restored = RT.restoreSave(s.toSave(), Game, s.nowMs);
+  for (const session of [s, restored]) {
+    session.changeSpeed(60000);
+    for (let i = 0; i < 10; i++) {
+      session.changeSpeed(10000);
+      session.changeSpeed(60000);
+    }
+    assert.equal(session.nextTickAtMs(), trip.arriveAtMs);
+    assert.equal(session.transit.arriveAtMs, trip.arriveAtMs);
+    assert.equal(session.advanceTo(trip.arriveAtMs - 1).ticks, 0);
+    assert.equal(session.game.cityId, 'seoul');
+    assert.equal(session.advanceTo(trip.arriveAtMs).arrived, true);
+    assert.equal(session.game.day, 2);
+    assert.equal(session.game.stats.transportCost, trip.cost);
+  }
+  assert.deepEqual(s.game.exportCheckpoint(), restored.game.exportCheckpoint());
+  assert.deepEqual(RT.restoreSave(s.toSave(), Game, s.nowMs).game.exportCheckpoint(), s.game.exportCheckpoint());
+});
+
+test('0.6 저장의 속도 행동은 당시 반올림과 날짜 경계를 재현한다', () => {
+  const legacy = {
+    schemaVersion: 1, mode: 'realtime', seed: 'legacy-rounded-tick',
+    startedAtMs: 100000, observedAtMs: 160000, msPerDay: 60000, activeMsPerDay: 60000,
+    actions: [
+      { type: 'setSpeed', atMs: 100001, msPerDay: 10000 },
+      { type: 'setSpeed', atMs: 100001, msPerDay: 60000 },
+      { type: 'buy', atMs: 160000, productId: 'paper', qty: 1 }
+    ]
+  };
+  const s = RT.restoreSave(legacy, Game, legacy.observedAtMs);
+  assert.equal(s.game.day, 1);
+  assert.equal(s.nextTickAtMs(), 160001);
+  assert.equal(s.recentPerformance('day', 1)[0].buys, 1);
+  s.advanceTo(160001);
+  assert.equal(s.game.day, 2);
+});
+
+test('속도 전환으로 가상 시계 기준과 출발 시각이 음수가 되어도 체크포인트를 복원한다', () => {
+  const s = new Session({ GameClass: Game, seed: 0, startedAtMs: 0, msPerDay: 10000 });
+  s.perform('startTravel', { destinationId: 'busan' }, 0);
+  s.perform('setSpeed', { msPerDay: 60000 }, 9001);
+  const cp = s.checkpointNow();
+  assert.ok(cp.clockEpochMs < 0);
+  assert.ok(cp.transit.departedAtMs < 0);
+  const restored = RT.restoreSave(s.toSave(), Game, 9001);
+  assert.equal(restored.nextTickAtMs(), s.nextTickAtMs());
+  assert.deepEqual(restored.transit, s.transit);
+  assert.deepEqual(restored.game.exportCheckpoint(), s.game.exportCheckpoint());
+});
+
+test('복구의 마지막 경제일 이후 같은 날의 도착도 같은 배치에서 처리한다', () => {
+  const s = create('fractional-arrival');
+  const trip = s.perform('startTravel', { destinationId: 'busan' }, 100500);
+  const progress = s.advanceTowards(trip.arriveAtMs, 1);
+  assert.deepEqual(progress, { ticks: 1, arrived: true, nowMs: trip.arriveAtMs, complete: true });
+  assert.equal(s.game.cityId, 'busan');
+});
+
+test('오프라인 복구 도중 새로고침하거나 시스템 시계가 후퇴해도 복구 목표를 유지한다', () => {
+  const s = create('resume-offline-watermark');
+  const trip = s.perform('startTravel', { destinationId: 'shanghai' }, 100500);
+  const target = trip.arriveAtMs + 8000;
+  const direct = RT.restoreSave(s.toSave(), Game, target);
+  assert.equal(s.advanceTowards(target, 2).complete, false);
+  assert.throws(() => s.perform('setSpeed', { msPerDay: 10000 }, s.nowMs), /복구/);
+
+  const partial = s.toSave();
+  assert.equal(partial.recoveryTargetMs, target);
+  const restored = RT.restoreSave(partial, Game, 100000, { catchUpTicks: 2 });
+  assert.equal(restored.game.cityId, 'shanghai');
+  assert.equal(restored.recoveryTargetMs, target);
+  for (let i = 0; i < 10 && restored.recoveryTargetMs !== null; i++) restored.advanceTowards(100000, 2);
+  assert.equal(restored.nowMs, target);
+  assert.equal(restored.toSave().recoveryTargetMs, undefined);
+  assert.deepEqual(restored.game.exportCheckpoint(), direct.game.exportCheckpoint());
+});
+
+test('체크포인트 없는 0.6 행동 사이에 긴 공백이 있어도 배치 단위로 재생한다', () => {
+  const actionAt = 100000 + 100001 * 1000;
+  const legacy = {
+    schemaVersion: 1, mode: 'realtime', seed: 'legacy-long-action-gap',
+    startedAtMs: 100000, observedAtMs: actionAt, msPerDay: 1000,
+    actions: [{ type: 'buy', atMs: actionAt, productId: 'rice', qty: 1 }]
+  };
+  const first = RT.restoreSave(legacy, Game, actionAt, { catchUpTicks: 2 });
+  assert.equal(first.game.day, 3);
+  assert.equal(first.game.stats.buys, 0);
+  assert.deepEqual(first.toSave().actions, legacy.actions);
+  assert.equal(first.toSave().observedAtMs, actionAt);
+
+  for (let i = 0; i < 11 && first.recoveryTargetMs !== null; i++) first.advanceTowards(actionAt, 10000);
+  assert.equal(first.game.day, 100002);
+  assert.equal(first.game.stats.buys, 1);
+  assert.equal(first.recentPerformance('day', 1)[0].buys, 1);
+  const compacted = first.toSave();
+  assert.deepEqual(compacted.actions, []);
+  assert.deepEqual(RT.restoreSave(compacted, Game, actionAt).game.exportCheckpoint(), first.game.exportCheckpoint());
+});
+
+test('일·주 경계에서 운송비는 출발일에, 판매 손익은 실제 체결일에 한 번씩 기록한다', () => {
+  const s = create('week-rounding-0');
+  s.perform('buy', { productId: 'paper', qty: 2 }, 100000);
+  s.perform('buy', { productId: 'paper', qty: 1 }, 105000);
+  const investment = s.perform('upgradeIntel', {}, 106000);
+  const firstSale = s.perform('sell', { productId: 'paper', qty: 1 }, 106000);
+  const secondSale = s.perform('sell', { productId: 'paper', qty: 1 }, 106100);
+  const trip = s.perform('startTravel', { destinationId: 'busan' }, 106999);
+  const realized = firstSale.profit + secondSale.profit;
+  const net = realized - trip.cost - investment.cost;
+  const cp = s.checkpointNow();
+  assert.equal(cp.dailyHistory.find((row) => row.index === 7).netProfit, net);
+  assert.equal(cp.weeklyHistory[0].netProfit, net);
+
+  // A 0.6.1 checkpoint may contain the previous arithmetic order's rounding error.
+  const save = s.toSave();
+  const oldNet = -investment.cost + firstSale.profit + secondSale.profit - trip.cost;
+  assert.notEqual(oldNet, net);
+  save.checkpoint.dailyHistory.find((row) => row.index === 7).netProfit = oldNet;
+  save.checkpoint.weeklyHistory[0].netProfit = oldNet;
+  const restored = RT.restoreSave(save, Game, 107000);
+  assert.throws(() => restored.perform('sell', { productId: 'paper', qty: 1 }, 107000), /운송 중/);
+  const lastSale = restored.perform('sell', { productId: 'paper', qty: 1 }, trip.arriveAtMs);
+  const daily = restored.recentPerformance('day', 3);
+  const day7 = daily.find((row) => row.index === 7);
+  const arrivalDay = daily[daily.length - 1];
+  const [week1, week2] = restored.recentPerformance('week', 2);
+  for (const row of [day7, week1]) {
+    assert.equal(row.realizedProfit, realized);
+    assert.equal(row.investmentCost, investment.cost);
+    assert.equal(row.transportCost, trip.cost);
+    assert.equal(row.netProfit, row.realizedProfit - row.transportCost - row.investmentCost);
+  }
+  for (const row of [arrivalDay, week2]) {
+    assert.equal(row.sells, 1);
+    assert.equal(row.transportCost, 0);
+    assert.equal(row.netProfit, lastSale.profit);
+  }
+  assert.equal(restored.performanceTotals().transportCost, trip.cost);
+});
+
+test('체크포인트 생성 실패 뒤 재시도해도 압축 행동 수는 중복되지 않는다', () => {
+  const s = create('checkpoint-retry');
+  s.perform('buy', { productId: 'paper', qty: 1 }, s.nowMs);
+  const exportCheckpoint = s.game.exportCheckpoint;
+  s.game.exportCheckpoint = () => { throw new Error('checkpoint export failed'); };
+  assert.throws(() => s.checkpointNow(), /checkpoint export failed/);
+  assert.equal(s.archivedActions, 0);
+  assert.equal(s.actions.length, 1);
+  s.game.exportCheckpoint = exportCheckpoint;
+  assert.equal(s.checkpointNow().archivedActions, 1);
+  assert.equal(s.actions.length, 0);
+});
+
+test('체크포인트의 시계·항로·시장·손익 필드가 손상되면 복원을 중단한다', () => {
+  const s = create('malformed-checkpoint');
+  s.perform('startTravel', { destinationId: 'busan' }, 100500);
+  s.checkpointNow();
+  const corruptions = [
+    [(cp) => { cp.clockEpochMs -= cp.msPerDay - 1; }, /시계와 경제 날짜/],
+    [(cp) => { cp.transit.to = 'constructor'; }, /운송 항로/],
+    [(cp) => { delete cp.economy.marketDynamics.seoul.paper.demand; }, /시장 상태/],
+    [(cp) => { delete cp.economy.stats.revenue; }, /거래 통계/],
+    [(cp) => { cp.economy.rngState = 0; }, /난수 상태/],
+    [(cp) => { cp.dailyHistory[0].netProfit = 0; }, /손익 집계 금액/],
+    [(cp) => { Object.assign(cp.dailyHistory[0], { index: 2, startDay: 2, endDay: 2 }); }, /손익 집계 기간/]
+  ];
+  for (const [corrupt, message] of corruptions) {
+    const save = s.toSave();
+    corrupt(save.checkpoint);
+    assert.throws(() => RT.restoreSave(save, Game, s.nowMs), message);
+  }
+});
+
 console.log('\nAll Merchant Globe realtime tests passed.');

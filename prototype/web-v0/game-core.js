@@ -91,7 +91,7 @@
     // Checkpoints capture the exact PRNG position, not just the initial seed.
     rng.getState = () => state >>> 0;
     rng.setState = (next) => {
-      if (!Number.isInteger(next) || next < 0 || next > 0xFFFFFFFF) {
+      if (!Number.isInteger(next) || next < 1 || next > 0xFFFFFFFF) {
         throw new Error('체크포인트 난수 상태가 올바르지 않습니다.');
       }
       state = next >>> 0;
@@ -220,7 +220,7 @@
     }
 
     restoreCheckpoint(source) {
-      if (!source || source.format !== 1 || !CITIES[source.cityId] ||
+      if (!source || source.format !== 1 || !Object.hasOwn(CITIES, source.cityId) ||
           !Number.isSafeInteger(source.day) || source.day < 1 ||
           !Number.isSafeInteger(source.maxDay) || source.maxDay < source.day ||
           !Number.isFinite(source.cash) || source.cash < 0 ||
@@ -240,10 +240,13 @@
           throw new Error('체크포인트 도시 상태가 누락되었습니다.');
         }
         for (const product of PRODUCTS) {
-          if (!Number.isFinite(state.market[cityId][product.id]) ||
-              !state.marketDynamics[cityId][product.id] ||
-              !Number.isFinite(state.marketDynamics[cityId][product.id].stock)) {
-            throw new Error('체크포인트 시장 상태가 누락되었습니다.');
+          const anchor = state.market[cityId][product.id];
+          const market = state.marketDynamics[cityId][product.id];
+          if (!Number.isFinite(anchor) || anchor <= 0 || !market ||
+              !Number.isFinite(market.stock) || market.stock < 0 ||
+              ['targetStock', 'demand', 'targetDemand', 'productionFactor', 'consumptionFactor']
+                .some((field) => !Number.isFinite(market[field]) || market[field] <= 0)) {
+            throw new Error('체크포인트 시장 상태가 올바르지 않습니다.');
           }
         }
       }
@@ -255,10 +258,20 @@
           throw new Error('체크포인트 화물 상태가 올바르지 않습니다.');
         }
       }
-      for (const field of ['buys', 'sells', 'trips', 'realizedProfit', 'transportCost', 'unitsBought', 'unitsSold']) {
-        if (!Number.isFinite(state.stats[field])) {
+      for (const field of ['buys', 'sells', 'trips', 'revenue', 'transportCost', 'unitsBought', 'unitsSold']) {
+        if (!Number.isSafeInteger(state.stats[field]) || state.stats[field] < 0) {
           throw new Error('체크포인트 거래 통계가 올바르지 않습니다.');
         }
+      }
+      if (!Number.isFinite(state.stats.realizedProfit)) throw new Error('체크포인트 거래 통계가 올바르지 않습니다.');
+      if (state.events.some((event) => !event || !Object.hasOwn(CITIES, event.cityId) ||
+          !this.getProduct(event.productId) || !Number.isSafeInteger(event.expiresDay)) ||
+          state.routeEvents.some((event) => !event || !Object.hasOwn(CITIES, event.from) ||
+            !Object.hasOwn(CITIES, event.to) || !this.getRoute(event.from, event.to) ||
+            event.routeKey !== this.routeKey(event.from, event.to) ||
+            !Number.isFinite(event.costMultiplier) || event.costMultiplier <= 0 ||
+            !Number.isSafeInteger(event.daysDelta) || !Number.isSafeInteger(event.expiresDay))) {
+        throw new Error('체크포인트 시장 또는 항로 사건이 올바르지 않습니다.');
       }
       // Validate the RNG position before mutating the current game.
       this.rng.setState(state.rngState);
@@ -272,8 +285,11 @@
     }
 
     getProduct(id) { return PRODUCTS.find((p) => p.id === id); }
-    getCity(id) { return CITIES[id]; }
-    getRoute(from, to) { return ROUTES[from] && ROUTES[from][to] ? ROUTES[from][to] : null; }
+    getCity(id) { return Object.hasOwn(CITIES, id) ? CITIES[id] : undefined; }
+    getRoute(from, to) {
+      const routes = Object.hasOwn(ROUTES, from) ? ROUTES[from] : null;
+      return routes && Object.hasOwn(routes, to) ? routes[to] : null;
+    }
 
     routeKey(from, to) {
       return [from, to].sort().join(':');
