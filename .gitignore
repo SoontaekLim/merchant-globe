@@ -9,3 +9,4 @@ __pycache__/
 *.py[cod]
 .vscode/
 .idea/
+prototype/web-v0/simulation/report*.json

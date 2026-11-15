@@ -4,8 +4,14 @@ import json
 import subprocess
 import sys
 import time
+from pathlib import Path
 from urllib.error import URLError
 from urllib.request import urlopen
+
+PROJECT_DIR = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(PROJECT_DIR))
+
+from server import DEFAULT_HOST, parse_args
 
 BASE_URL = "http://127.0.0.1:8000"
 
@@ -18,6 +24,10 @@ def read_url(path: str) -> str:
 
 
 def main() -> None:
+    assert DEFAULT_HOST == "127.0.0.1"
+    assert parse_args([]).host == "127.0.0.1"
+    assert parse_args(["--host", "0.0.0.0"]).host == "0.0.0.0"
+
     process = subprocess.Popen(
         [sys.executable, "server.py"],
         stdout=subprocess.PIPE,
@@ -44,10 +54,26 @@ def main() -> None:
         health = json.loads(health_text)
         assert health["ok"] is True
         assert health["service"] == "merchant-globe-mvp"
-        assert health["version"] == "0.3.0"
+        assert health["version"] == "0.6.1"
+
+        config = json.loads(read_url("/api/config"))
+        assert config["mode"] == "realtime"
+        assert config["maxDay"] is None
+        assert config["classicMaxDay"] == 30
 
         index = read_url("/")
         assert "Merchant Globe" in index
+        assert "realtime-core.js" in index
+        assert "realtime-app.js" in index
+        assert "classic.html" in index
+
+        classic = read_url("/classic.html")
+        assert "save-system.js" in classic
+        assert "app.js" in classic
+
+        assert "RealtimeSession" in read_url("/realtime-core.js")
+        assert "renderMarket" in read_url("/realtime-app.js")
+        assert "rt-clock-panel" in read_url("/realtime.css")
 
         print("Smoke test passed.")
         print(json.dumps(health, ensure_ascii=False))

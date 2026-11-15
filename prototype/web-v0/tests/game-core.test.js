@@ -1,5 +1,30 @@
 const assert = require('node:assert/strict');
-const { Game } = require('../game-core.js');
+const { Game, CITIES } = require('../game-core.js');
+
+test('인삼의 지역 정체성은 유지하되 도시 간 가격 극단은 완화한다', () => {
+  assert.equal(CITIES.seoul.modifiers.ginseng, 0.80);
+  assert.equal(CITIES.seoul.production.ginseng, 1.25);
+  assert.equal(CITIES.busan.modifiers.ginseng, 0.94);
+  assert.equal(CITIES.fukuoka.modifiers.ginseng, 1.22);
+  assert.equal(CITIES.fukuoka.consumption.ginseng, 1.22);
+  assert.equal(CITIES.osaka.modifiers.ginseng, 1.22);
+  assert.equal(CITIES.osaka.consumption.ginseng, 1.28);
+  assert.equal(CITIES.shanghai.modifiers.ginseng, 1.18);
+
+  const lowestBase = 1900 * CITIES.seoul.modifiers.ginseng;
+  const highestBase = 1900 * CITIES.osaka.modifiers.ginseng;
+  assert.ok(highestBase - lowestBase < 850);
+});
+
+test('상하이-후쿠오카 비단 가격차는 공급지 정체성을 유지하면서 완화한다', () => {
+  assert.equal(CITIES.shanghai.modifiers.silk, 0.78);
+  assert.equal(CITIES.shanghai.production.silk, 1.30);
+  assert.equal(CITIES.fukuoka.modifiers.silk, 1.10);
+
+  const shanghaiBase = 1500 * CITIES.shanghai.modifiers.silk;
+  const fukuokaBase = 1500 * CITIES.fukuoka.modifiers.silk;
+  assert.ok(fukuokaBase - shanghaiBase < 500);
+});
 
 function test(name, fn) {
   try {
@@ -163,6 +188,88 @@ test('정보망이 없으면 원격 시장 사건은 정확한 영향과 종료�
   assert.equal(rumor.precision, 'rumor');
   assert.equal(rumor.impact, null);
   assert.equal(rumor.expiresDay, null);
+});
+
+
+test('도시 생산/소비 특성이 평시 재고와 수요 구조에 반영된다', () => {
+  const game = new Game({ seed: 'city-profile' });
+  const shanghaiTea = game.marketDynamics.shanghai.tea;
+  const seoulSpice = game.marketDynamics.seoul.spice;
+  assert.ok(shanghaiTea.productionFactor > 1);
+  assert.ok(seoulSpice.consumptionFactor > 1);
+  assert.ok(shanghaiTea.targetStock > 80);
+  assert.ok(seoulSpice.targetDemand > 120);
+});
+
+test('중량품은 개당 화물칸을 2칸 사용한다', () => {
+  const game = new Game({ seed: 'bulky-cargo' });
+  game.cash = 1_000_000;
+  game.marketDynamics.seoul.iron.stock = 100;
+  assert.throws(() => game.buy('iron', 11), /22칸/);
+  game.buy('iron', 10);
+  assert.equal(game.cargoUsed(), 20);
+});
+
+test('수산물은 시간이 지나면 신선도가 하락한다', () => {
+  const game = new Game({ seed: 'freshness-decay' });
+  game.cash = 100_000;
+  game.buy('fish', 3);
+  const before = game.inventory.fish.freshness;
+  game.advanceEconomy(2);
+  const after = game.inventory.fish.freshness;
+  assert.ok(after < before, `${after} < ${before}`);
+  assert.ok(game.freshnessMultiplier('fish') < 1);
+});
+
+test('새 수산물을 추가 매입하면 평균 신선도가 일부 회복된다', () => {
+  const game = new Game({ seed: 'freshness-blend' });
+  game.cash = 100_000;
+  game.buy('fish', 2);
+  game.advanceEconomy(2);
+  const stale = game.inventory.fish.freshness;
+  game.buy('fish', 2);
+  assert.ok(game.inventory.fish.freshness > stale);
+  assert.ok(game.inventory.fish.freshness < 1);
+});
+
+test('공급 차질 이벤트는 시장 재고를 직접 줄인다', () => {
+  const game = new Game({ seed: 'shortage-event' });
+  const event = game.createEvent('shortage');
+  assert.equal(event.kind, 'shortage');
+  assert.equal(event.scenario, 'shortage');
+  assert.ok(event.impact < 0);
+  assert.ok(game.marketDynamics[event.cityId][event.productId].stock >= 1);
+});
+
+test('항로 혼잡은 운송비와 이동 시간을 증가시킨다', () => {
+  const game = new Game({ seed: 'route-congestion' });
+  game.createRouteEvent({ from: 'seoul', to: 'busan', kind: 'congestion' });
+  const route = game.routeInfo('seoul', 'busan');
+  assert.equal(route.baseCost, 380);
+  assert.equal(route.baseDays, 1);
+  assert.equal(route.cost, 480);
+  assert.equal(route.days, 2);
+  assert.equal(route.events.length, 1);
+});
+
+test('순풍은 1일 항로를 0일로 만들지 않는다', () => {
+  const game = new Game({ seed: 'route-tailwind' });
+  game.createRouteEvent({ from: 'seoul', to: 'busan', kind: 'tailwind' });
+  const route = game.routeInfo('seoul', 'busan');
+  assert.equal(route.days, 1);
+  assert.ok(route.cost < route.baseCost);
+});
+
+test('이동은 현재 항로 상태의 실제 비용과 시간을 사용한다', () => {
+  const game = new Game({ seed: 'route-travel' });
+  game.cash = 100_000;
+  game.createRouteEvent({ from: 'seoul', to: 'busan', kind: 'congestion' });
+  const before = game.cash;
+  const result = game.travel('busan');
+  assert.equal(result.cost, 480);
+  assert.equal(result.days, 2);
+  assert.equal(game.day, 3);
+  assert.equal(game.cash, before - 480);
 });
 
 console.log('\nAll Merchant Globe core tests passed.');
