@@ -508,6 +508,31 @@
       }
       validateHistory(cp.dailyHistory, 'day', DAILY_HISTORY_LIMIT, cp.economy.day);
       validateHistory(cp.weeklyHistory, 'week', WEEKLY_HISTORY_LIMIT, Math.ceil(cp.economy.day / 7));
+      if (cp.localMarketDiary != null) {
+        const diary = cp.localMarketDiary;
+        if (!diary || typeof diary !== 'object' || Array.isArray(diary) ||
+            Object.keys(diary).length > Object.keys(cp.economy.market).length) {
+          throw new Error('현지 시장 관측 기록이 올바르지 않습니다.');
+        }
+        for (const [cityId, rows] of Object.entries(diary)) {
+          if (!Object.hasOwn(cp.economy.market, cityId) ||
+              !Array.isArray(rows) || rows.length > LOCAL_MARKET_DIARY_LIMIT) {
+            throw new Error('현지 시장 관측 도시가 올바르지 않습니다.');
+          }
+          let lastDay = 0;
+          const ids = Object.keys(cp.economy.inventory);
+          for (const row of rows) {
+            if (!row || !Number.isSafeInteger(row.day) ||
+                row.day <= lastDay || row.day > cp.economy.day ||
+                !row.prices || typeof row.prices !== 'object' || Array.isArray(row.prices) ||
+                Object.keys(row.prices).length !== ids.length ||
+                ids.some((id) => !Number.isFinite(row.prices[id]) || row.prices[id] <= 0)) {
+              throw new Error('현지 시장 관측 시세가 올바르지 않습니다.');
+            }
+            lastDay = row.day;
+          }
+        }
+      }
       integer(cp.investmentTotal, '체크포인트 성장 투자비', 0);
     } else if (payload.archivedActionCount) {
       throw new Error('압축된 행동의 체크포인트가 없습니다.');
