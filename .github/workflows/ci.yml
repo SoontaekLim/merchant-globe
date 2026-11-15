@@ -55,6 +55,9 @@ jobs:
         run: |
           node --check game-core.js
           node --check app.js
+          node --check realtime-core.js
+          node --check realtime-app.js
+          node --check trade-ux.js
 
       - name: Run economy tests
         run: npm test

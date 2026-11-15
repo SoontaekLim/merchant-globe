@@ -59,6 +59,7 @@
     const timeline = [];
     const snapshots = [];
     const productTotals = {};
+    const investmentCosts = { cargo: 0, intel: 0, total: 0 };
     const routeCounts = {};
     const routePairCounts = {};
     const cityVisits = { [game.cityId]: 1 };
@@ -150,6 +151,9 @@
       } else if (action.type === 'upgradeCargo' || action.type === 'upgradeIntel') {
         entry.cost = result.cost;
         entry.level = action.type === 'upgradeCargo' ? game.cargoUpgradeLevel : game.intelLevel;
+        const category = action.type === 'upgradeCargo' ? 'cargo' : 'intel';
+        investmentCosts[category] += result.cost;
+        investmentCosts.total += result.cost;
       }
 
       timeline.push(entry);
@@ -187,6 +191,9 @@
       netAssetsChange: finalAssets - startingAssets,
       stats: { ...game.stats },
       upgrades: { cargo: game.cargoUpgradeLevel, intel: game.intelLevel },
+      investmentCosts,
+      realizedAfterTransport: game.stats.realizedProfit - game.stats.transportCost,
+      realizedAfterExpenses: game.stats.realizedProfit - game.stats.transportCost - investmentCosts.total,
       productTotals,
       routeCounts,
       routePairCounts,

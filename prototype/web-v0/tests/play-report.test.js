@@ -147,4 +147,36 @@ test('실패한 거래는 플레이 기록에 포함되지 않는다', () => {
   }, Game, SaveSystem), /재고/);
 });
 
+test('화물칸 투자비와 정보망 투자비를 판매 실현손익에서 구분한다', () => {
+  const cargo = Report.buildReport({
+    seed: 'upgrade-cost-cargo', maxDay: 30,
+    actions: [{ type: 'upgradeCargo' }]
+  }, Game, SaveSystem);
+  assert.equal(cargo.investmentCosts.cargo, 8000);
+  assert.equal(cargo.investmentCosts.intel, 0);
+  assert.equal(cargo.investmentCosts.total, 8000);
+  assert.equal(cargo.stats.realizedProfit, 0);
+  assert.equal(cargo.realizedAfterTransport, 0);
+  assert.equal(cargo.realizedAfterExpenses, -8000);
+  assert.equal(cargo.netAssetsChange, -8000);
+  assert.equal(cargo.timeline[0].cost, 8000);
+
+  const intel = Report.buildReport({
+    seed: 'upgrade-cost-intel', maxDay: 30,
+    actions: [{ type: 'upgradeIntel' }]
+  }, Game, SaveSystem);
+  assert.equal(intel.investmentCosts.intel, 6000);
+  assert.equal(intel.investmentCosts.cargo, 0);
+  assert.equal(intel.investmentCosts.total, 6000);
+  assert.equal(intel.realizedAfterExpenses, -6000);
+});
+
+test('운송비 차감 실현손익과 자산 증감은 서로 다른 지표다', () => {
+  const report = Report.buildReport({ seed, maxDay: 30, actions }, Game, SaveSystem);
+  assert.equal(report.investmentCosts.total, 0);
+  assert.equal(report.realizedAfterTransport, report.stats.realizedProfit - report.stats.transportCost);
+  assert.equal(report.realizedAfterExpenses, report.realizedAfterTransport);
+  assert.equal(report.finalAssets - report.startingAssets, report.netAssetsChange);
+});
+
 console.log('\nAll Merchant Globe play report tests passed.');
