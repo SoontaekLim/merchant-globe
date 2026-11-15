@@ -6,6 +6,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 const Core = require('../game-core.js');
 const Realtime = require('../realtime-core.js');
+const MarketDecision = require('../market-decision.js');
 const TradeUX = require('../trade-ux.js');
 
 const root = path.resolve(__dirname, '..');
@@ -29,6 +30,8 @@ test('실시간 앱에서 조회하는 모든 요소 ID는 기본 HTML에 존재
 test('실시간 진입점과 30일 클래식은 서로 다른 엔트리 스크립트를 사용한다', () => {
   assert.ok(html.includes('src="realtime-core.js"'));
   assert.ok(html.includes('src="realtime-app.js"'));
+  assert.ok(html.includes('src="market-decision.js"'));
+  assert.ok(html.indexOf('src="market-decision.js"') < html.indexOf('src="realtime-app.js"'));
   assert.ok(!html.includes('src="app.js"'));
   assert.ok(!html.includes('src="save-system.js"'));
   assert.ok(classic.includes('src="app.js"'));
@@ -63,9 +66,11 @@ function launchApp() {
     body: element()
   };
   document.getElementById('speedSelect').value = '60000';
+  document.getElementById('marketSort').value = 'default';
   vm.runInNewContext(app, {
     window: {
       MerchantGlobeCore: Core, MerchantGlobeRealtime: Realtime, MerchantGlobeTradeUX: TradeUX,
+      MerchantGlobeMarketDecision: MarketDecision,
       setInterval(callback) { tick = callback; }
     },
     document,
@@ -114,6 +119,18 @@ test('긴 공백 직후 거래·속도 변경·내보내기는 같은 복구 제
     page.elements.get('exportBtn').dispatch('click');
     assert.equal(page.downloads.length, 1);
   }
+});
+
+test('상품 정렬을 바꾸어도 시장 경제·현금·화물·저장 행동을 변경하지 않는다', () => {
+  const page = launchApp();
+  const before = page.saved();
+  const select = page.elements.get('marketSort');
+  for (const mode of ['range-low', 'day-drop', 'default']) {
+    select.value = mode;
+    select.dispatch('change');
+    assert.equal(page.elements.get('marketSortHelp').textContent.length > 0, true);
+  }
+  assert.deepEqual(page.saved(), before);
 });
 
 console.log('\nAll Merchant Globe realtime UI contract tests passed.');

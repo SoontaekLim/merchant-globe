@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="theme-color" content="#0f172a" />
-  <title>Merchant Globe 0.7 — 실시간 무역</title>
+  <title>Merchant Globe 0.7.1 — 실시간 무역</title>
   <link rel="stylesheet" href="styles.css" />
   <link rel="stylesheet" href="realtime.css" />
 </head>
@@ -12,7 +12,7 @@
 <div class="app-shell rt-app">
   <header class="topbar rt-topbar">
     <div>
-      <p class="eyebrow">MERCHANT GLOBE · REAL-TIME PROTOTYPE 0.7</p>
+      <p class="eyebrow">MERCHANT GLOBE · REAL-TIME PROTOTYPE 0.7.1</p>
       <h1>Merchant Globe</h1>
       <p class="muted">시장과 운송이 거래와 무관하게 진행되는 지속형 무역 시뮬레이션</p>
     </div>
@@ -87,6 +87,16 @@
         </div>
         <p class="rt-helper">예정 도시는 예산 계산용입니다. 실제 운송은 오른쪽 항로 버튼에서 시작합니다.</p>
         <p class="rt-helper">최근 현지 시세는 직접 머무르며 관측한 기록입니다. 전일 데이터가 없으면 변동률을 표시하지 않으며, 미래 가격을 보장하지 않습니다.</p>
+        <div class="rt-sort-bar">
+          <label for="marketSort">상품 보기
+            <select id="marketSort">
+              <option value="default">기본 순서</option>
+              <option value="range-low">관측 저가권 우선</option>
+              <option value="day-drop">전일 하락폭 큰 순</option>
+            </select>
+          </label>
+          <small id="marketSortHelp">직접 관측한 시세만 비교합니다. 저가권은 매입 추천이나 미래 가격 예측이 아닙니다.</small>
+        </div>
         <div id="marketList" class="rt-market-list"></div>
       </section>
 
@@ -159,6 +169,7 @@
 <script src="game-core.js"></script>
 <script src="trade-ux.js"></script>
 <script src="realtime-core.js"></script>
+<script src="market-decision.js"></script>
 <script src="realtime-app.js"></script>
 </body>
 </html>

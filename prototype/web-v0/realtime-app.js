@@ -4,6 +4,7 @@
   const { Game, CITIES, PRODUCTS, INTEL_LEVELS } = window.MerchantGlobeCore;
   const TradeUX = window.MerchantGlobeTradeUX;
   const Realtime = window.MerchantGlobeRealtime;
+  const MarketDecision = window.MerchantGlobeMarketDecision;
   const SAVE_KEY = 'merchant-globe.realtime.save.v1';
   const el = (id) => document.getElementById(id);
   const money = (value) => '₩' + Math.round(Number(value) || 0).toLocaleString('ko-KR');
@@ -58,6 +59,7 @@
     selectedIntelCity = 'busan';
     plannedCityId = null;
     quantityMode = 'preset_5';
+    el('marketSort').value = 'default';
     el('tradeQty').value = '5';
     el('speedSelect').value = String(speed);
     Object.keys(cargoQty).forEach((key) => delete cargoQty[key]);
@@ -198,12 +200,23 @@
       return;
     }
     const keepCost = el('keepTravelCost').checked;
-    PRODUCTS.forEach((product) => {
+    const sortMode = el('marketSort').value;
+    const sortHelp = {
+      default: '상품 기본 순서 · 현지 관측 기록은 매입 추천이 아닙니다.',
+      'range-low': '최근 7게임일 중 최소 3일 관측한 상품만 비교 · 저가권도 수익을 보장하지 않습니다.',
+      'day-drop': '어제와 오늘을 모두 관측한 상품만 비교 · 하락세가 계속된다는 뜻은 아닙니다.'
+    };
+    el('marketSortHelp').textContent = sortHelp[sortMode] || sortHelp.default;
+    const productRows = MarketDecision.sortRows(
+      PRODUCTS.map((product) => ({ product, trend: session.localMarketTrend(product.id) })),
+      sortMode
+    );
+    productRows.forEach(({ product, trend }) => {
       const info = game.marketInfo(game.cityId, product.id);
       const item = game.inventory[product.id];
       const baseline = product.basePrice * CITIES[game.cityId].modifiers[product.id];
       const deviation = 100 * (info.price / baseline - 1);
-      const trend = session.localMarketTrend(product.id);
+      const band = MarketDecision.signal(trend);
       const trendChange = trend ? trend.previousDayPercent : null;
       const trendLabel = trendChange == null
         ? '전일 현지 관측 없음 · 시세 변화 기록 수집 중'
@@ -238,6 +251,9 @@
         '">' + (rate == null ? '—' : pct(rate)) + '</strong></span></div>' +
         '<div class="rt-local-trend ' + trendClass + '" aria-label="최근 현지 시세 관측">' +
         '<span>현지 기록</span> ' + escapeText(trendLabel) + '</div>' +
+        '<div class="rt-price-position"><span>' + escapeText(band.label) + '</span>' +
+        (band.eligible ? '<div class="rt-price-position-track" aria-hidden="true"><i style="left:' +
+          band.position.toFixed(1) + '%"></i></div>' : '') + '</div>' +
         '<div class="rt-pair"><button class="rt-buy buy-button" type="button">매입 ' + requested + '개</button>' +
         '<button class="rt-max secondary-button" type="button">' +
         (keepCost ? '이동비 확보 ' : '최대 ') + max + '개</button></div>' +
@@ -565,6 +581,7 @@
     });
   });
   el('keepTravelCost').addEventListener('change', renderMarket);
+  el('marketSort').addEventListener('change', renderMarket);
   el('routeBudgetCity').addEventListener('change', () => {
     plannedCityId = el('routeBudgetCity').value;
     renderMarket();

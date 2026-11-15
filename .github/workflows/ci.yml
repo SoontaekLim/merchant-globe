@@ -57,6 +57,7 @@ jobs:
           node --check app.js
           node --check realtime-core.js
           node --check realtime-app.js
+          node --check market-decision.js
           node --check trade-ux.js
 
       - name: Run economy tests
