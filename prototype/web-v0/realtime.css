@@ -106,3 +106,14 @@
   .rt-history-row { grid-template-columns: minmax(0,1fr) auto; }
   .rt-history-detail { grid-column: 1 / -1; grid-row: 2; }
 }
+
+/* v0.7: first-hand local market observations, not forecasts. */
+.rt-local-trend {
+  margin: 0; padding: 7px 9px; border: 1px solid rgba(57,89,111,.55);
+  border-radius: 8px; background: rgba(17,34,49,.65);
+  color: #b6c9e0; font-size: .7rem; line-height: 1.45;
+  overflow-wrap: anywhere; font-variant-numeric: tabular-nums;
+}
+.rt-local-trend span { color: var(--text); font-weight: 750; margin-right: 4px; }
+.rt-local-trend.positive { border-color: rgba(66,214,178,.37); }
+.rt-local-trend.negative { border-color: rgba(246,130,126,.37); }
