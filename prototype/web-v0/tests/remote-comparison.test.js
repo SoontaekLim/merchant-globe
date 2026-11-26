@@ -1,6 +1,6 @@
 'use strict';
 const assert = require('node:assert/strict');
-const { Game, CITIES } = require('../game-core.js');
+const { Game, CITIES, PRODUCTS } = require('../game-core.js');
 const TradeUX = require('../trade-ux.js');
 const { compare } = require('../remote-comparison.js');
 
@@ -33,6 +33,7 @@ test('관측 기록만 사용하고 원격 실제 시장 조회를 호출하지 
   assert.equal(dest.observedPrice, 1000);
   assert.equal(dest.age, 3);
   assert.equal(dest.arrivalAge, 3 + dest.days);
+  assert.equal(dest.revenue, 990);
   assert.equal(dest.net, dest.revenue - result.basis - dest.cost);
   assert.equal(dest.netPerDay, dest.net / dest.days);
 });
@@ -40,9 +41,9 @@ test('관측 기록만 사용하고 원격 실제 시장 조회를 호출하지 
 test('정보망에 포함된 상품만 비교에 표시한다', () => {
   const game = make();
   game.upgradeIntel();
-  for (const product of game.constructor.PRODUCTS) {
-    for (const dest of run(game, product.id || product).rows) {
-      const known = game.remoteIntel(dest.cityId).entries.some(x => x.productId === (product.id || product));
+  for (const product of PRODUCTS) {
+    for (const dest of run(game, product.id).rows) {
+      const known = game.remoteIntel(dest.cityId).entries.some(x => x.productId === (product.id));
       assert.equal(dest.observedPrice !== null, known);
     }
   }
@@ -96,4 +97,16 @@ test('비교를 반복해도 경제 상태와 저장에 필요한 기록을 바�
   const before = JSON.stringify(game);
   run(game); run(game, 'rice', 1, 'held');
   assert.equal(JSON.stringify(game), before);
+});
+
+test('항로 혼잡 시 현재 비용 및 시간이 비교에 반영된다', () => {
+  const game = make();
+  observe(game, 'busan', 'rice', 3000);
+  const base = row(run(game));
+  game.routeEvents.push({routeKey: game.routeKey('seoul', 'busan'), expiresDay: game.day + 2, costMultiplier: 1.5, daysDelta: 1});
+  const crowded = row(run(game));
+  assert.equal(crowded.cost, Math.round(base.cost * 1.5 / 10) * 10);
+  assert.equal(crowded.days, base.days + 1);
+  assert.equal(crowded.net, base.net - (crowded.cost - base.cost));
+  assert.equal(crowded.arrivalAge, base.arrivalAge + 1);
 });
