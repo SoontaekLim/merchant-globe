@@ -138,3 +138,12 @@
   .rt-sort-bar label { justify-content: space-between; flex: 1 1 100%; }
   .rt-sort-bar select { max-width: 240px; }
 }
+
+/* v0.7.2: observed remote market comparison. */
+.rt-compare-section { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); min-width: 0; }
+.rt-compare-section h3 { font-size: .94rem; margin: 0 0 8px; }
+.rt-compare-controls { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(100%,105px),1fr)); gap: 7px; }
+.rt-compare-controls input { box-sizing: border-box; display: block; width: 100%; margin-top: 3px; min-height: 39px; border: 1px solid var(--border); border-radius: 9px; color: var(--text); background: var(--bg); padding: 6px 8px; }
+.rt-compare-list { display: grid; gap: 6px; }
+.rt-compare-card { gap: 4px; padding: 9px; }
+.rt-compare-card > strong { font-size: .83rem; }

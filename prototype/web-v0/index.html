@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="theme-color" content="#0f172a" />
-  <title>Merchant Globe 0.7.1 — 실시간 무역</title>
+  <title>Merchant Globe 0.7.2 — 실시간 무역</title>
   <link rel="stylesheet" href="styles.css" />
   <link rel="stylesheet" href="realtime.css" />
 </head>
@@ -12,7 +12,7 @@
 <div class="app-shell rt-app">
   <header class="topbar rt-topbar">
     <div>
-      <p class="eyebrow">MERCHANT GLOBE · REAL-TIME PROTOTYPE 0.7.1</p>
+      <p class="eyebrow">MERCHANT GLOBE · REAL-TIME PROTOTYPE 0.7.2</p>
       <h1>Merchant Globe</h1>
       <p class="muted">시장과 운송이 거래와 무관하게 진행되는 지속형 무역 시뮬레이션</p>
     </div>
@@ -133,6 +133,23 @@
             <select id="intelCity"></select>
           </label>
           <div id="intelList" class="rt-intel-list"></div>
+          <section class="rt-compare-section" aria-label="도시별 무역 비교">
+            <h3>도시별 무역 비교</h3>
+            <div class="rt-compare-controls">
+              <label class="rt-intel-label" for="compareProduct">상품
+                <select id="compareProduct"></select>
+              </label>
+              <label class="rt-intel-label" for="compareMode">비교 방식
+                <select id="compareMode"><option value="buy">신규 매입</option><option value="held">보유 화물</option></select>
+              </label>
+              <label class="rt-intel-label" for="compareQty">비교 수량
+                <input id="compareQty" type="number" min="1" max="9999" step="1" value="1" inputmode="numeric" />
+              </label>
+            </div>
+            <p class="muted rt-helper" id="compareSummary"></p>
+            <p class="rt-helper muted">관측 시세에 판매 스프레드·예상 신선도를 반영한 참고값입니다. 도착 시 시세와 대량 판매 충격은 알 수 없습니다. 선택 상품에 전체 편도 운송비를 차감하며 이익을 보장하지 않습니다.</p>
+            <div id="remoteCompareList" class="rt-compare-list"></div>
+          </section>
         </section>
       </aside>
     </div>
@@ -170,6 +187,7 @@
 <script src="trade-ux.js"></script>
 <script src="realtime-core.js"></script>
 <script src="market-decision.js"></script>
+<script src="remote-comparison.js"></script>
 <script src="realtime-app.js"></script>
 </body>
 </html>

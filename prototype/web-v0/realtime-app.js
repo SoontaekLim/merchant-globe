@@ -5,6 +5,7 @@
   const TradeUX = window.MerchantGlobeTradeUX;
   const Realtime = window.MerchantGlobeRealtime;
   const MarketDecision = window.MerchantGlobeMarketDecision;
+  const RemoteComparison = window.MerchantGlobeRemoteComparison;
   const SAVE_KEY = 'merchant-globe.realtime.save.v1';
   const el = (id) => document.getElementById(id);
   const money = (value) => '₩' + Math.round(Number(value) || 0).toLocaleString('ko-KR');
@@ -60,6 +61,9 @@
     plannedCityId = null;
     quantityMode = 'preset_5';
     el('marketSort').value = 'default';
+    el('compareProduct').value = PRODUCTS[0].id;
+    el('compareMode').value = 'buy';
+    el('compareQty').value = '1';
     el('tradeQty').value = '5';
     el('speedSelect').value = String(speed);
     Object.keys(cargoQty).forEach((key) => delete cargoQty[key]);
@@ -423,6 +427,43 @@
     });
   }
 
+  function renderRemoteComparison() {
+    const game = session.game;
+    const productSelect = el('compareProduct');
+    const modeSelect = el('compareMode');
+    const qtyInput = el('compareQty');
+    const summary = el('compareSummary');
+    const area = el('remoteCompareList');
+    area.innerHTML = '';
+    const blocked = Boolean(session.transit) || catchingUp;
+    productSelect.disabled = modeSelect.disabled = qtyInput.disabled = blocked;
+    if (blocked) {
+      summary.textContent = catchingUp ? '오프라인 복구 완료 후 비교할 수 있습니다.' : '운송 중에는 출발 도시를 기준으로 비교할 수 없습니다.';
+      return;
+    }
+    const product = PRODUCTS.find(p => p.id === productSelect.value) || PRODUCTS[0];
+    const mode = modeSelect.value === 'held' ? 'held' : 'buy';
+    const result = RemoteComparison.compare(game, Object.keys(CITIES), product.id, qtyInput.value, mode, TradeUX);
+    summary.textContent = CITIES[game.cityId].name + ' · ' + product.name + ' ' + result.qty + '개 · ' +
+      (result.basis === null ? result.reason : (mode === 'buy' ? '현재 매입 견적 ' : '보유 평균 매입원가 ') + money(result.basis));
+    area.innerHTML = result.rows.map(row => {
+      const known = row.observedPrice !== null;
+      const available = result.basis !== null && row.affordable;
+      return '<article class="rt-product-card rt-compare-card"><strong>' + escapeText(CITIES[row.cityId].name) + '</strong>' +
+        '<p class="rt-quote">운송비 ' + money(row.cost) + ' · ' + row.days + '게임일</p>' +
+        '<p class="rt-quote">' + (known
+          ? '관측 시세 ' + money(row.observedPrice) + '/개 · Day ' + row.capturedDay + ' (' + row.age + '일 전) · 도착 시 기록 ' + row.arrivalAge + '일 경과'
+          : '미확인 시세 · 방문 또는 정보망 확장 필요') + '</p>' +
+        (product.trait === 'perishable' && result.basis !== null
+          ? '<p class="rt-quote">도착 예상 신선도 ' + Math.round(row.quality * 100) + '%</p>' : '') +
+        '<p class="rt-quote">' + (!available ? (result.reason ? escapeText(result.reason) : '이동비 부족') :
+          !known ? '손익 추정 불가' : '관측가 기준 추정 판매액 ' + money(row.revenue)) + '</p>' +
+        (row.net === null ? '' : '<p class="rt-quote">운송비 차감 추정 손익 <strong class="' +
+          (row.net >= 0 ? 'positive' : 'negative') + '">' + signed(row.net) +
+          '</strong> · 이동 1일당 ' + signed(row.netPerDay) + '</p>') + '</article>';
+    }).join('');
+  }
+
   function renderPerformanceHistory() {
     const period = el('performancePeriod').value === 'week' ? 'week' : 'day';
     const rows = session.recentPerformance(period, period === 'day' ? 14 : 8);
@@ -494,6 +535,7 @@
     renderCargo();
     renderRoutes();
     renderIntel();
+    renderRemoteComparison();
     renderEventsAndLog();
   }
 
@@ -567,6 +609,18 @@
     }
   }
 
+  for (const product of PRODUCTS) {
+    const option = document.createElement('option');
+    option.value = product.id;
+    option.textContent = product.name;
+    el('compareProduct').appendChild(option);
+  }
+  el('compareProduct').value = PRODUCTS[0].id;
+  el('compareMode').value = 'buy';
+  el('compareQty').value = '1';
+  el('compareProduct').addEventListener('change', renderRemoteComparison);
+  el('compareMode').addEventListener('change', renderRemoteComparison);
+  el('compareQty').addEventListener('input', renderRemoteComparison);
   el('performancePeriod').addEventListener('change', renderPerformanceHistory);
   el('speedSelect').addEventListener('change', () => {
     const nextSpeed = Number(el('speedSelect').value);
