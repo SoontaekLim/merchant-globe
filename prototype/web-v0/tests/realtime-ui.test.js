@@ -8,6 +8,7 @@ const Core = require('../game-core.js');
 const Realtime = require('../realtime-core.js');
 const MarketDecision = require('../market-decision.js');
 const TradeUX = require('../trade-ux.js');
+const RemoteComparison = require('../remote-comparison.js');
 
 const root = path.resolve(__dirname, '..');
 const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
@@ -32,6 +33,8 @@ test('실시간 진입점과 30일 클래식은 서로 다른 엔트리 스크�
   assert.ok(html.includes('src="realtime-app.js"'));
   assert.ok(html.includes('src="market-decision.js"'));
   assert.ok(html.indexOf('src="market-decision.js"') < html.indexOf('src="realtime-app.js"'));
+  assert.ok(html.includes('src="remote-comparison.js"'));
+  assert.ok(html.indexOf('src="remote-comparison.js"') < html.indexOf('src="realtime-app.js"'));
   assert.ok(!html.includes('src="app.js"'));
   assert.ok(!html.includes('src="save-system.js"'));
   assert.ok(classic.includes('src="app.js"'));
@@ -70,7 +73,7 @@ function launchApp() {
   vm.runInNewContext(app, {
     window: {
       MerchantGlobeCore: Core, MerchantGlobeRealtime: Realtime, MerchantGlobeTradeUX: TradeUX,
-      MerchantGlobeMarketDecision: MarketDecision,
+      MerchantGlobeMarketDecision: MarketDecision, MerchantGlobeRemoteComparison: RemoteComparison,
       setInterval(callback) { tick = callback; }
     },
     document,
@@ -131,6 +134,38 @@ test('상품 정렬을 바꾸어도 시장 경제·현금·화물·저장 행동
     assert.equal(page.elements.get('marketSortHelp').textContent.length > 0, true);
   }
   assert.deepEqual(page.saved(), before);
+});
+
+test('원격 비교 선택 변경은 미확인 시세를 공개하거나 저장을 변경하지 않는다', () => {
+  const page = launchApp();
+  const before = page.saved();
+  const area = page.elements.get('remoteCompareList');
+  assert.ok(area.innerHTML.includes('미확인 시세'));
+  assert.ok(!area.innerHTML.includes('추정 손익'));
+  const product = page.elements.get('compareProduct');
+  product.value = 'fish';
+  product.dispatch('change');
+  const mode = page.elements.get('compareMode');
+  mode.value = 'held';
+  mode.dispatch('change');
+  assert.ok(page.elements.get('compareSummary').textContent.includes('보유 수량 부족'));
+  const qty = page.elements.get('compareQty');
+  qty.value = '2';
+  qty.dispatch('input');
+  assert.ok(page.elements.get('compareSummary').textContent.includes('2개'));
+  assert.deepEqual(page.saved(), before);
+});
+
+test('오프라인 복구 중 원격 비교는 숨기고 입력을 잠근다', () => {
+  const page = launchApp();
+  page.setTime(100000 + 600 * 60000);
+  page.tick();
+  assert.equal(page.elements.get('remoteCompareList').innerHTML, '');
+  assert.equal(page.elements.get('compareProduct').disabled, true);
+  page.tick();
+  page.tick();
+  assert.equal(page.elements.get('compareProduct').disabled, false);
+  assert.ok(page.elements.get('remoteCompareList').innerHTML.length > 0);
 });
 
 console.log('\nAll Merchant Globe realtime UI contract tests passed.');
